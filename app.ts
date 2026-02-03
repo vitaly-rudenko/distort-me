@@ -7,7 +7,7 @@ async function extractFrames() {
   await fs.rm('./frames', { recursive: true, force: true })
   await fs.mkdir('./frames', { recursive: true })
 
-  execSync(`ffmpeg -i ./video_${id}.mp4 -r 24 ./frames/$filename%03d.jpg`)
+  execSync(`ffmpeg -i ./video_${id}.mp4 -r 24 ./frames/%03d.jpg`)
 }
 
 async function getFrameSize() {
@@ -27,7 +27,7 @@ async function distortFrames(dimensions: [number, number]) {
 
   const filenames = await fs.readdir('./frames')
   for (const [i, filename] of filenames.entries()) {
-    const percentage = i / filenames.length
+    const percentage = i / (filenames.length - 1)
     const rescale = Math.floor(40 + 50 * (1 - percentage))
 
     console.log(`Distorting frame ${i + 1} of ${filenames.length} ${rescale}%`)
