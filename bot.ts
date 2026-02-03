@@ -1,5 +1,8 @@
 import { Telegraf } from 'telegraf'
 import { message } from 'telegraf/filters'
+import { Readable } from 'node:stream'
+import fs from 'fs'
+import { finished } from 'node:stream/promises'
 
 const telegraf = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!)
 
@@ -38,6 +41,21 @@ telegraf.on(message('voice'), async context => {
     await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`)
     return
   }
+
+  const fileId = context.message.voice.file_id
+
+  const url = await telegraf.telegram.getFileLink(fileId)
+  const response = await fetch(url)
+  if (!response.body) {
+    // TODO: fail
+    return
+  }
+
+  const file = Readable.from(response.body)
+  const writeStream = fs.createWriteStream(`./${fileId}.ogg`) // TODO: smart extension
+  file.pipe(writeStream)
+
+  await finished(file, { cleanup: true })
 
   // TODO:
 })
