@@ -1,17 +1,22 @@
+import fs from 'fs/promises'
+import { createWriteStream } from 'fs'
 import { Telegraf } from 'telegraf'
 import { message } from 'telegraf/filters'
 import { Readable } from 'node:stream'
-import fs from 'fs'
 import { finished } from 'node:stream/promises'
+import * as uuid from 'uuid'
+import { execSync } from 'node:child_process'
 
 const telegraf = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!)
 
-const maxSizeBytes = 256 * 1028 * 1024 // 256 MB
+const maxSizeBytes = 512 * 1028 * 1024 // 512 MB
 const maxDurationSeconds = 90
 const maxWidth = 2048
 const maxHeight = 1556
 const maxDiameter = Math.ceil(Math.sqrt(maxWidth ** 2 + maxHeight ** 2))
 const supportedMimeTypes = ['video/quicktime', 'video/mp4', 'audio/ogg', 'audio/mpeg']
+
+// TODO: support uncompressed images (documents)
 
 telegraf.on(message('voice'), async context => {
   const durationSeconds = context.message.voice.duration
@@ -41,21 +46,6 @@ telegraf.on(message('voice'), async context => {
     await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`)
     return
   }
-
-  const fileId = context.message.voice.file_id
-
-  const url = await telegraf.telegram.getFileLink(fileId)
-  const response = await fetch(url)
-  if (!response.body) {
-    // TODO: fail
-    return
-  }
-
-  const file = Readable.from(response.body)
-  const writeStream = fs.createWriteStream(`./${fileId}.ogg`) // TODO: smart extension
-  file.pipe(writeStream)
-
-  await finished(file, { cleanup: true })
 
   // TODO:
 })
@@ -119,13 +109,53 @@ telegraf.on(message('sticker'), async context => {
 telegraf.on(message('photo'), async context => {
   const photo = context.message.photo
     .sort((a, b) => b.width * b.height - a.width * a.height)
-    .filter(p => p.file_size && p.file_size > maxSizeBytes && p.width <= maxWidth && p.height <= maxHeight)[0]
+    .filter(p => p.file_size && p.file_size <= maxSizeBytes && p.width <= maxWidth && p.height <= maxHeight)[0]
   if (!photo) {
     await context.reply('Photo is too large or invalid')
     return
   }
 
-  // TODO:
+  // TODO: queue
+
+  const fileId = photo.file_id
+
+  const url = await telegraf.telegram.getFileLink(fileId)
+  const response = await fetch(url)
+  if (!response.body) {
+    // TODO: fail
+    return
+  }
+
+  const operationId = uuid.v4()
+  await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
+
+  const inputFilePath = `local/operations/${operationId}/input.jpeg`
+  const outputFilePath = `local/operations/${operationId}/output.jpeg`
+
+  const file = Readable.from(response.body)
+  const writeStream = createWriteStream(`./${inputFilePath}`)
+  file.pipe(writeStream)
+
+  await Promise.all([finished(file, { cleanup: true }), finished(writeStream, { cleanup: true })])
+
+  const results = execSync(
+    `docker run --rm \
+     -v "./local:/local" \
+     imagemagick identify -format '%w %h' "/${inputFilePath}"`,
+  )
+
+  const dimensions = results.toString('utf-8')
+  const [width, height] = dimensions.split(' ').map(Number) as [number, number]
+
+  execSync(
+    `docker run --rm \
+     -v "./local:/local" \
+     imagemagick "/${inputFilePath}" -liquid-rescale '50%' -resize '${width}x${height}' "/${outputFilePath}"`,
+  )
+
+  await context.replyWithPhoto({ source: `./${outputFilePath}` })
+
+  await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true })
 })
 
 telegraf.on(message('video_note'), async context => {
