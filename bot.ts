@@ -5,7 +5,8 @@ import { message } from 'telegraf/filters'
 import { Readable } from 'node:stream'
 import { finished } from 'node:stream/promises'
 import * as uuid from 'uuid'
-import { execSync } from 'node:child_process'
+import { exec, execSync } from 'node:child_process'
+import { Queue } from './queue.ts'
 
 const telegraf = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!)
 
@@ -15,6 +16,8 @@ const maxWidth = 2048
 const maxHeight = 1556
 const maxDiameter = Math.ceil(Math.sqrt(maxWidth ** 2 + maxHeight ** 2))
 const supportedMimeTypes = ['video/quicktime', 'video/mp4', 'audio/ogg', 'audio/mpeg']
+
+const queue = new Queue({ limit: 100 })
 
 // TODO: support uncompressed images (documents)
 
@@ -115,47 +118,96 @@ telegraf.on(message('photo'), async context => {
     return
   }
 
-  // TODO: queue
+  const message = await context.reply('Warming up...', {
+    reply_parameters: { message_id: context.message.message_id },
+    disable_notification: true,
+  })
 
-  const fileId = photo.file_id
+  const position = queue.enqueue(async () => {
+    const operationId = uuid.v4()
 
-  const url = await telegraf.telegram.getFileLink(fileId)
-  const response = await fetch(url)
-  if (!response.body) {
-    // TODO: fail
+    try {
+      await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Downloading the file...')
+
+      const fileId = photo.file_id
+
+      const url = await telegraf.telegram.getFileLink(fileId)
+      const response = await fetch(url)
+      if (!response.body) {
+        // TODO: fail
+        return
+      }
+
+      await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
+
+      const inputFilePath = `local/operations/${operationId}/input.jpeg`
+      const outputFilePath = `local/operations/${operationId}/output.jpeg`
+
+      const file = Readable.from(response.body)
+      const writeStream = createWriteStream(`./${inputFilePath}`)
+      file.pipe(writeStream)
+
+      await Promise.all([finished(file, { cleanup: true }), finished(writeStream, { cleanup: true })])
+
+      await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Verifying the file...')
+
+      const results = execSync(
+        `docker run --rm \
+         -v "./local:/local" \
+         imagemagick identify -format '%w %h' "/${inputFilePath}"`,
+      )
+
+      const dimensions = results.toString('utf-8')
+      const [width, height] = dimensions.split(' ').map(Number) as [number, number]
+
+      await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Rescaling the file...')
+
+      await new Promise<void>((resolve, reject) => {
+        exec(
+          `docker run --rm \
+           -v "./local:/local" \
+           imagemagick "/${inputFilePath}" -liquid-rescale '50%' -resize '${width}x${height}' "/${outputFilePath}"`,
+          err => (err ? reject(err) : resolve()),
+        )
+      })
+
+      await telegraf.telegram.sendPhoto(
+        context.message.chat.id,
+        { source: `./${outputFilePath}` },
+        { reply_parameters: { message_id: context.message.message_id } },
+      )
+    } catch (err) {
+      console.warn(err)
+      await telegraf.telegram.editMessageText(
+        message.chat.id,
+        message.message_id,
+        undefined,
+        'Sorry, something went wrong. Please try another file!',
+      )
+    } finally {
+      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
+      await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
+  if (!position) {
+    await telegraf.telegram.editMessageText(
+      message.chat.id,
+      message.message_id,
+      undefined,
+      'Sorry, the queue is full. Please try again later!',
+    )
     return
   }
 
-  const operationId = uuid.v4()
-  await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
-
-  const inputFilePath = `local/operations/${operationId}/input.jpeg`
-  const outputFilePath = `local/operations/${operationId}/output.jpeg`
-
-  const file = Readable.from(response.body)
-  const writeStream = createWriteStream(`./${inputFilePath}`)
-  file.pipe(writeStream)
-
-  await Promise.all([finished(file, { cleanup: true }), finished(writeStream, { cleanup: true })])
-
-  const results = execSync(
-    `docker run --rm \
-     -v "./local:/local" \
-     imagemagick identify -format '%w %h' "/${inputFilePath}"`,
-  )
-
-  const dimensions = results.toString('utf-8')
-  const [width, height] = dimensions.split(' ').map(Number) as [number, number]
-
-  execSync(
-    `docker run --rm \
-     -v "./local:/local" \
-     imagemagick "/${inputFilePath}" -liquid-rescale '50%' -resize '${width}x${height}' "/${outputFilePath}"`,
-  )
-
-  await context.replyWithPhoto({ source: `./${outputFilePath}` })
-
-  await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true })
+  if (position.index > 0) {
+    await telegraf.telegram.editMessageText(
+      message.chat.id,
+      message.message_id,
+      undefined,
+      `Please wait, your position in the queue: ${position.index + 1}`,
+    )
+  }
 })
 
 telegraf.on(message('video_note'), async context => {
