@@ -144,16 +144,19 @@ async function getImageDimensions(input: { path: string }) {
 
 async function distortImage(input: {
   inputPath: string
-  outputFilePath: string
+  outputPath: string
   width: number
   height: number
   percentage: number
 }) {
+
+  await fs.mkdir(dirname(input.outputPath), { recursive: true })
+
   await new Promise<void>((resolve, reject) => {
     exec(
       `docker run --rm \
        -v "./local:/local" \
-       imagemagick "${input.inputPath}" -liquid-rescale '${Math.floor(input.percentage * 100)}%' -resize '${input.width}x${input.height}' "${input.outputFilePath}"`,
+       imagemagick "${input.inputPath}" -liquid-rescale '${Math.floor(input.percentage * 100)}%' -resize '${input.width}x${input.height}' "${input.outputPath}"`,
       err => (err ? reject(err) : resolve()),
     )
   })
@@ -176,20 +179,20 @@ telegraf.on(message('photo'), async context => {
   const position = queue.enqueue(async () => {
     const fileId = photo.file_id
     const operationId = uuid.v4()
-    const inputFilePath = `local/operations/${operationId}/input.jpeg`
-    const outputFilePath = `local/operations/${operationId}/output.jpeg`
+    const inputPath = `local/operations/${operationId}/input.jpeg`
+    const outputPath = `local/operations/${operationId}/output.jpeg`
 
     try {
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Downloading...')
-      await downloadFile({ fileId, path: `./${inputFilePath}` })
+      await downloadFile({ fileId, path: `./${inputPath}` })
 
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Verifying...')
-      const [width, height] = await getImageDimensions({ path: `/${inputFilePath}` })
+      const [width, height] = await getImageDimensions({ path: `/${inputPath}` })
 
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Rescaling...')
       await distortImage({
-        inputPath: `/${inputFilePath}`,
-        outputFilePath: `/${outputFilePath}`,
+        inputPath: `/${inputPath}`,
+        outputPath: `/${outputPath}`,
         width,
         height,
         percentage: 0.5,
@@ -198,7 +201,7 @@ telegraf.on(message('photo'), async context => {
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Sending...')
       await telegraf.telegram.sendPhoto(
         context.message.chat.id,
-        { source: `./${outputFilePath}` },
+        { source: `./${outputPath}` },
         { reply_parameters: { message_id: context.message.message_id } },
       )
     } catch (err) {
