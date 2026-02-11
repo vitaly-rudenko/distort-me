@@ -193,9 +193,9 @@ telegraf.on(message('photo'), async context => {
       await distortImage({
         inputPath: `/${inputPath}`,
         outputPath: `/${outputPath}`,
+        percentage: 0.5,
         width,
         height,
-        percentage: 0.5,
       })
 
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Sending...')
