@@ -51,7 +51,55 @@ telegraf.on(message('voice'), async context => {
     return
   }
 
-  // TODO:
+  const message = await context.reply('Warming up...', {
+    reply_parameters: { message_id: context.message.message_id },
+    disable_notification: true,
+  })
+
+  const position = queue.enqueue(async () => {
+    const fileId = context.message.voice.file_id
+    const operationId = uuid.v4()
+    const inputPath = `local/operations/${operationId}/input.ogg`
+    const outputPath = `local/operations/${operationId}/output.ogg`
+
+    try {
+      await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Downloading...')
+      await downloadFile({ fileId, path: `./${inputPath}` })
+
+      await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Sending...')
+      await telegraf.telegram.sendVoice(
+        context.message.chat.id,
+        { source: `./${outputPath}` },
+        { reply_parameters: { message_id: context.message.message_id } },
+      )
+    } catch (err) {
+      console.warn(err)
+
+      await telegraf.telegram.editMessageText(
+        message.chat.id,
+        message.message_id,
+        undefined,
+        'Sorry, something went wrong. Please try another file!',
+      )
+    } finally {
+      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
+      await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
+  if (!position) {
+    await telegraf.telegram.editMessageText(
+      message.chat.id,
+      message.message_id,
+      undefined,
+      'Sorry, the queue is full. Please try again later!',
+    )
+    return
+  }
+
+  if (position.index > 0) {
+    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Queued...')
+  }
 })
 
 telegraf.on(message('audio'), async context => {
@@ -149,7 +197,6 @@ async function distortImage(input: {
   height: number
   percentage: number
 }) {
-
   await fs.mkdir(dirname(input.outputPath), { recursive: true })
 
   await new Promise<void>((resolve, reject) => {
@@ -160,6 +207,51 @@ async function distortImage(input: {
       err => (err ? reject(err) : resolve()),
     )
   })
+}
+
+async function getAudioSampleRate(input: { path: string }) {
+  const sampleRate = execSync(
+    `ffprobe \
+     -v error \
+     -select_streams a \
+     -of default=noprint_wrappers=1:nokey=1 \
+     -show_entries stream=sample_rate \
+     "${input.path}"`,
+  )
+
+  if (!Number.isSafeInteger(Number(sampleRate))) {
+    throw new Error(`Could not determine sample rate (path: ${input.path})`)
+  }
+
+  return Number(sampleRate)
+}
+
+async function distortAudio(input: {
+  inputPath: string
+  outputPath: string
+  percentage: number // TODO: default 0.7
+  pitch: number // TODO: default is 1
+}) {
+  await fs.mkdir(dirname(input.outputPath), { recursive: true })
+
+  const sampleRate = await getAudioSampleRate({ path: input.inputPath })
+
+  const filters = [
+    //
+    input.percentage !== 0 && `vibrato=f=10:d=${input.percentage}`,
+    input.pitch !== 1 && `asetrate=${sampleRate}*${input.pitch},aresample=${sampleRate},atempo=1/${input.pitch}`,
+  ].filter(Boolean)
+
+  const filterArgument = filters.length > 0 ? ` -filter:a "${filters.join(',')}"` : ''
+
+  execSync(
+    `ffmpeg \
+     -i "${input.inputPath}" \
+     ${filterArgument} \
+     -c:a libopus \
+     -shortest \
+     "${input.outputPath}"`,
+  )
 }
 
 telegraf.on(message('photo'), async context => {
@@ -305,3 +397,10 @@ telegraf.on(message('video'), async context => {
 })
 
 telegraf.launch()
+
+await distortAudio({
+  inputPath: './audio_1.ogg',
+  outputPath: './audio_distorted_6.ogg',
+  percentage: 0,
+  pitch: 1,
+})
