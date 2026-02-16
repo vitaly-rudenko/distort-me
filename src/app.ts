@@ -6,6 +6,8 @@ import { Queue } from './utils/queue.ts'
 import { downloadFile } from './tools/download-file.ts'
 import { getImageDimensions } from './tools/get-image-dimensions.ts'
 import { distortImage } from './tools/distort-image.ts'
+import { distortAudio } from './tools/distort-audio.ts'
+import { getAudioSampleRate } from './tools/get-audio-sample-rate.ts'
 
 const telegraf = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!)
 
@@ -54,6 +56,10 @@ telegraf.on(message('voice'), async context => {
     disable_notification: true,
   })
 
+  async function notify(text: string) {
+    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
+  }
+
   const position = queue.enqueue(async () => {
     const fileId = context.message.voice.file_id
     const operationId = uuid.v4()
@@ -61,11 +67,17 @@ telegraf.on(message('voice'), async context => {
     const outputPath = `./local/operations/${operationId}/output.ogg`
 
     try {
-      await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Downloading...')
+      await notify('Downloading...')
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Sending...')
+      await notify('Verifying...')
+      const sampleRate = await getAudioSampleRate({ path: inputPath })
+
+      await notify('Distorting...')
+      await distortAudio({ inputPath, outputPath, sampleRate, percentage: 0.7, pitch: 1.5 })
+
+      await notify('Sending...')
       await telegraf.telegram.sendVoice(
         context.message.chat.id,
         { source: outputPath },
@@ -73,13 +85,7 @@ telegraf.on(message('voice'), async context => {
       )
     } catch (err) {
       console.warn(err)
-
-      await telegraf.telegram.editMessageText(
-        message.chat.id,
-        message.message_id,
-        undefined,
-        'Sorry, something went wrong. Please try another file!',
-      )
+      await notify('Sorry, something went wrong. Please try another file!')
     } finally {
       await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
       await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
@@ -87,17 +93,12 @@ telegraf.on(message('voice'), async context => {
   })
 
   if (!position) {
-    await telegraf.telegram.editMessageText(
-      message.chat.id,
-      message.message_id,
-      undefined,
-      'Sorry, the queue is full. Please try again later!',
-    )
+    await notify('Sorry, the queue is full. Please try again later!')
     return
   }
 
   if (position.index > 0) {
-    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Queued...')
+    await notify('Queued...')
   }
 })
 
@@ -171,6 +172,10 @@ telegraf.on(message('photo'), async context => {
     disable_notification: true,
   })
 
+  async function notify(text: string) {
+    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
+  }
+
   const position = queue.enqueue(async () => {
     const fileId = photo.file_id
     const operationId = uuid.v4()
@@ -178,23 +183,17 @@ telegraf.on(message('photo'), async context => {
     const outputPath = `./local/operations/${operationId}/output.jpeg`
 
     try {
-      await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Downloading...')
+      await notify('Downloading...')
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Verifying...')
+      await notify('Verifying...')
       const [width, height] = await getImageDimensions({ path: inputPath })
 
-      await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Rescaling...')
-      await distortImage({
-        inputPath,
-        outputPath,
-        percentage: 0.5,
-        width,
-        height,
-      })
+      await notify('Distorting...')
+      await distortImage({ inputPath, outputPath, percentage: 0.5, width, height })
 
-      await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Sending...')
+      await notify('Sending...')
       await telegraf.telegram.sendPhoto(
         context.message.chat.id,
         { source: outputPath },
@@ -202,13 +201,7 @@ telegraf.on(message('photo'), async context => {
       )
     } catch (err) {
       console.warn(err)
-
-      await telegraf.telegram.editMessageText(
-        message.chat.id,
-        message.message_id,
-        undefined,
-        'Sorry, something went wrong. Please try another file!',
-      )
+      await notify('Sorry, something went wrong. Please try another file!')
     } finally {
       await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
       await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
@@ -216,17 +209,12 @@ telegraf.on(message('photo'), async context => {
   })
 
   if (!position) {
-    await telegraf.telegram.editMessageText(
-      message.chat.id,
-      message.message_id,
-      undefined,
-      'Sorry, the queue is full. Please try again later!',
-    )
+    await notify('Sorry, the queue is full. Please try again later!')
     return
   }
 
   if (position.index > 0) {
-    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Queued...')
+    await notify('Queued...')
   }
 })
 
