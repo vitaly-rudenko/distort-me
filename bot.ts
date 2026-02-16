@@ -1,13 +1,12 @@
 import fs from 'fs/promises'
-import { dirname } from 'path'
-import { createWriteStream } from 'fs'
 import { Telegraf } from 'telegraf'
 import { message } from 'telegraf/filters'
-import { Readable } from 'node:stream'
-import { finished } from 'node:stream/promises'
 import * as uuid from 'uuid'
-import { exec, execSync } from 'node:child_process'
 import { Queue } from './queue.ts'
+import { downloadFile } from './tools/download-file.ts'
+import { getImageDimensions } from './tools/get-image-dimensions.ts'
+import { distortImage } from './tools/distort-image.ts'
+import { distortAudio } from './tools/distort-audio.ts'
 
 const telegraf = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!)
 
@@ -64,7 +63,8 @@ telegraf.on(message('voice'), async context => {
 
     try {
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Downloading...')
-      await downloadFile({ fileId, path: `./${inputPath}` })
+      const url = await telegraf.telegram.getFileLink(fileId)
+      await downloadFile({ url, path: `./${inputPath}` })
 
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Sending...')
       await telegraf.telegram.sendVoice(
@@ -158,102 +158,6 @@ telegraf.on(message('sticker'), async context => {
   // TODO:
 })
 
-async function downloadFile(input: { fileId: string; path: string }) {
-  await fs.mkdir(dirname(input.path), { recursive: true })
-
-  const url = await telegraf.telegram.getFileLink(input.fileId)
-  const response = await fetch(url)
-  if (String(response.status)[0] !== '2') {
-    throw new Error(`Failed to download file due to invalid status code: ${response.status} (fileId: ${input.fileId})`)
-  }
-  if (!response.body) {
-    throw new Error(`Failed to download file due to empty response body (fileId: ${input.fileId})`)
-  }
-
-  const file = Readable.from(response.body)
-  const writeStream = createWriteStream(input.path)
-  file.pipe(writeStream)
-
-  await Promise.all([finished(file, { cleanup: true }), finished(writeStream, { cleanup: true })])
-}
-
-async function getImageDimensions(input: { path: string }) {
-  const results = execSync(
-    `docker run --rm \
-    -v "./local:/local" \
-    imagemagick identify -format '%w %h' "${input.path}"`,
-  )
-
-  const dimensions = results.toString('utf-8')
-  const [width, height] = dimensions.split(' ').map(Number)
-
-  return [width, height] as [number, number]
-}
-
-async function distortImage(input: {
-  inputPath: string
-  outputPath: string
-  width: number
-  height: number
-  percentage: number
-}) {
-  await fs.mkdir(dirname(input.outputPath), { recursive: true })
-
-  await new Promise<void>((resolve, reject) => {
-    exec(
-      `docker run --rm \
-       -v "./local:/local" \
-       imagemagick "${input.inputPath}" -liquid-rescale '${Math.floor(input.percentage * 100)}%' -resize '${input.width}x${input.height}' "${input.outputPath}"`,
-      err => (err ? reject(err) : resolve()),
-    )
-  })
-}
-
-async function getAudioSampleRate(input: { path: string }) {
-  const sampleRate = execSync(
-    `ffprobe \
-     -v error \
-     -select_streams a \
-     -of default=noprint_wrappers=1:nokey=1 \
-     -show_entries stream=sample_rate \
-     "${input.path}"`,
-  )
-
-  if (!Number.isSafeInteger(Number(sampleRate))) {
-    throw new Error(`Could not determine sample rate (path: ${input.path})`)
-  }
-
-  return Number(sampleRate)
-}
-
-async function distortAudio(input: {
-  inputPath: string
-  outputPath: string
-  percentage: number // TODO: default 0.7
-  pitch: number // TODO: default is 1
-}) {
-  await fs.mkdir(dirname(input.outputPath), { recursive: true })
-
-  const sampleRate = await getAudioSampleRate({ path: input.inputPath })
-
-  const filters = [
-    //
-    input.percentage !== 0 && `vibrato=f=10:d=${input.percentage}`,
-    input.pitch !== 1 && `asetrate=${sampleRate}*${input.pitch},aresample=${sampleRate},atempo=1/${input.pitch}`,
-  ].filter(Boolean)
-
-  const filterArgument = filters.length > 0 ? ` -filter:a "${filters.join(',')}"` : ''
-
-  execSync(
-    `ffmpeg \
-     -i "${input.inputPath}" \
-     ${filterArgument} \
-     -c:a libopus \
-     -shortest \
-     "${input.outputPath}"`,
-  )
-}
-
 telegraf.on(message('photo'), async context => {
   const photo = context.message.photo
     .sort((a, b) => b.width * b.height - a.width * a.height)
@@ -276,7 +180,8 @@ telegraf.on(message('photo'), async context => {
 
     try {
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Downloading...')
-      await downloadFile({ fileId, path: `./${inputPath}` })
+      const url = await telegraf.telegram.getFileLink(fileId)
+      await downloadFile({ url, path: `./${inputPath}` })
 
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Verifying...')
       const [width, height] = await getImageDimensions({ path: `/${inputPath}` })
@@ -398,9 +303,3 @@ telegraf.on(message('video'), async context => {
 
 telegraf.launch()
 
-await distortAudio({
-  inputPath: './audio_1.ogg',
-  outputPath: './audio_distorted_6.ogg',
-  percentage: 0,
-  pitch: 1,
-})
