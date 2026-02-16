@@ -1,5 +1,3 @@
-import fs from 'fs/promises'
-import { dirname } from 'path'
 import { exec } from 'node:child_process'
 
 export async function distortAudio(input: {
@@ -9,8 +7,6 @@ export async function distortAudio(input: {
   percentage: number
   pitch: number
 }) {
-  await fs.mkdir(dirname(input.outputPath), { recursive: true })
-
   const filters = [
     //
     input.percentage !== 0 && `vibrato=f=10:d=${input.percentage}`,

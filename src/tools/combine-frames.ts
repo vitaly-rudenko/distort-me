@@ -22,13 +22,16 @@ export async function combineFrames(input: {
     exec(
       `ffmpeg \
        -framerate 24 \
-       -pattern_type glob \
-       -i "${input.inputDirectory}/*.jpg" \
+       -start_number 1 \
+       -i "${input.inputDirectory}/%d.jpg" \
        -i "${input.inputPath}" \
        ${filterArgument} \
        -c:a libopus \
+       -b:a 192k \
        -shortest \
        -c:v libx264 \
+       -crf 18 \
+       -preset slow \
        -pix_fmt yuv420p \
        "${input.outputPath}"`,
       err => (err ? reject(err) : resolve()),
