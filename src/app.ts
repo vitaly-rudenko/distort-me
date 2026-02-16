@@ -23,6 +23,7 @@ const supportedMimeTypes = ['video/quicktime', 'video/mp4', 'audio/ogg', 'audio/
 const queue = new Queue({ limit: 100 })
 
 // TODO: support uncompressed images (documents)
+// TODO: don't let one person fill up the queue
 
 telegraf.on(message('voice'), async context => {
   const durationSeconds = context.message.voice.duration
