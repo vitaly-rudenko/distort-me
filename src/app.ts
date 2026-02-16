@@ -2,11 +2,10 @@ import fs from 'fs/promises'
 import { Telegraf } from 'telegraf'
 import { message } from 'telegraf/filters'
 import * as uuid from 'uuid'
-import { Queue } from './queue.ts'
+import { Queue } from './utils/queue.ts'
 import { downloadFile } from './tools/download-file.ts'
 import { getImageDimensions } from './tools/get-image-dimensions.ts'
 import { distortImage } from './tools/distort-image.ts'
-import { distortAudio } from './tools/distort-audio.ts'
 
 const telegraf = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!)
 
@@ -58,18 +57,18 @@ telegraf.on(message('voice'), async context => {
   const position = queue.enqueue(async () => {
     const fileId = context.message.voice.file_id
     const operationId = uuid.v4()
-    const inputPath = `local/operations/${operationId}/input.ogg`
-    const outputPath = `local/operations/${operationId}/output.ogg`
+    const inputPath = `./local/operations/${operationId}/input.ogg`
+    const outputPath = `./local/operations/${operationId}/output.ogg`
 
     try {
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Downloading...')
       const url = await telegraf.telegram.getFileLink(fileId)
-      await downloadFile({ url, path: `./${inputPath}` })
+      await downloadFile({ url, path: inputPath })
 
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Sending...')
       await telegraf.telegram.sendVoice(
         context.message.chat.id,
-        { source: `./${outputPath}` },
+        { source: outputPath },
         { reply_parameters: { message_id: context.message.message_id } },
       )
     } catch (err) {
@@ -175,21 +174,21 @@ telegraf.on(message('photo'), async context => {
   const position = queue.enqueue(async () => {
     const fileId = photo.file_id
     const operationId = uuid.v4()
-    const inputPath = `local/operations/${operationId}/input.jpeg`
-    const outputPath = `local/operations/${operationId}/output.jpeg`
+    const inputPath = `./local/operations/${operationId}/input.jpeg`
+    const outputPath = `./local/operations/${operationId}/output.jpeg`
 
     try {
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Downloading...')
       const url = await telegraf.telegram.getFileLink(fileId)
-      await downloadFile({ url, path: `./${inputPath}` })
+      await downloadFile({ url, path: inputPath })
 
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Verifying...')
-      const [width, height] = await getImageDimensions({ path: `/${inputPath}` })
+      const [width, height] = await getImageDimensions({ path: inputPath })
 
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Rescaling...')
       await distortImage({
-        inputPath: `/${inputPath}`,
-        outputPath: `/${outputPath}`,
+        inputPath,
+        outputPath,
         percentage: 0.5,
         width,
         height,
@@ -198,7 +197,7 @@ telegraf.on(message('photo'), async context => {
       await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, 'Sending...')
       await telegraf.telegram.sendPhoto(
         context.message.chat.id,
-        { source: `./${outputPath}` },
+        { source: outputPath },
         { reply_parameters: { message_id: context.message.message_id } },
       )
     } catch (err) {
@@ -301,5 +300,6 @@ telegraf.on(message('video'), async context => {
   // TODO:
 })
 
-telegraf.launch()
-
+telegraf.launch(() => {
+  console.log('Bot started')
+})
