@@ -19,5 +19,9 @@ export async function downloadFile(input: { url: URL; path: string }) {
   const writeStream = createWriteStream(input.path)
   file.pipe(writeStream)
 
-  await Promise.all([finished(file, { cleanup: true }), finished(writeStream, { cleanup: true })])
+  await Promise.all([
+    //
+    finished(file, { cleanup: true }),
+    finished(writeStream, { cleanup: true }),
+  ])
 }

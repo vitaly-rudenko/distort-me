@@ -8,6 +8,8 @@ import { getImageDimensions } from './tools/get-image-dimensions.ts'
 import { distortImage } from './tools/distort-image.ts'
 import { distortAudio } from './tools/distort-audio.ts'
 import { getAudioSampleRate } from './tools/get-audio-sample-rate.ts'
+import { extractFrames } from './tools/extract-frames.ts'
+import { combineFrames } from './tools/combine-frames.ts'
 
 const telegraf = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!)
 
@@ -241,7 +243,88 @@ telegraf.on(message('video_note'), async context => {
     return
   }
 
-  // TODO:
+  const message = await context.reply('Warming up...', {
+    reply_parameters: { message_id: context.message.message_id },
+    disable_notification: true,
+  })
+
+  async function notify(text: string) {
+    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
+  }
+
+  const position = queue.enqueue(async () => {
+    const fileId = context.message.video_note.file_id
+    const operationId = uuid.v4()
+    const inputPath = `./local/operations/${operationId}/input.mp4`
+    const outputPath = `./local/operations/${operationId}/output.mp4`
+
+    try {
+      await notify('Downloading...')
+      const url = await telegraf.telegram.getFileLink(fileId)
+      await downloadFile({ url, path: inputPath })
+
+      await notify('Extracting frames...')
+      await extractFrames({
+        inputPath,
+        outputDirectory: `./local/operations/${operationId}/original`,
+      })
+
+      await notify('Verifying...')
+      const sampleRate = await getAudioSampleRate({ path: inputPath })
+      const [width, height] = await getImageDimensions({
+        path: `./local/operations/${operationId}/original/1.jpg`,
+      })
+
+      const filenames = await fs.readdir(`./local/operations/${operationId}/original`)
+      for (const [i, filename] of filenames.entries()) {
+        const percentage = i / (filenames.length - 1)
+        const rescale = Math.floor(40 + 50 * (1 - percentage))
+
+        const filePath = `./local/operations/${operationId}/original/${filename}`
+
+        await notify(`Distorting frame ${i + 1} of ${filenames.length} ${rescale}%`)
+        await distortImage({
+          inputPath: filePath,
+          outputPath: `./local/operations/${operationId}/distorted/${filename}`,
+          width,
+          height,
+          percentage,
+        })
+      }
+
+      await notify('Combining frames...')
+      await combineFrames({
+        inputPath,
+        outputPath,
+        inputDirectory: `./local/operations/${operationId}/distorted`,
+        percentage: 0.7,
+        pitch: 1.5,
+        sampleRate,
+      })
+
+      await notify('Sending...')
+      await telegraf.telegram.sendVideoNote(
+        context.message.chat.id,
+        { source: outputPath },
+        { reply_parameters: { message_id: context.message.message_id } },
+      )
+    } catch (err) {
+      console.warn(err)
+      await notify('Sorry, something went wrong. Please try another file!')
+    } finally {
+      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
+      // await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
+  if (!position) {
+    await notify('Sorry, the queue is full. Please try again later!')
+    return
+  }
+
+  if (position.index > 0) {
+    await notify('Queued...')
+  }
 })
 
 telegraf.on(message('video'), async context => {

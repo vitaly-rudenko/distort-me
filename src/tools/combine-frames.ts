@@ -1,16 +1,14 @@
-import fs from 'fs/promises'
-import { dirname } from 'path'
 import { exec } from 'node:child_process'
 
-export async function distortAudio(input: {
+// TODO: better variable names
+export async function combineFrames(input: {
   inputPath: string
+  inputDirectory: string
   outputPath: string
   sampleRate: number
   percentage: number
   pitch: number
 }) {
-  await fs.mkdir(dirname(input.outputPath), { recursive: true })
-
   const filters = [
     //
     input.percentage !== 0 && `vibrato=f=10:d=${input.percentage}`,
@@ -23,10 +21,15 @@ export async function distortAudio(input: {
   await new Promise<void>((resolve, reject) => {
     exec(
       `ffmpeg \
+       -framerate 24 \
+       -pattern_type glob \
+       -i "${input.inputDirectory}/*.jpg" \
        -i "${input.inputPath}" \
        ${filterArgument} \
        -c:a libopus \
        -shortest \
+       -c:v libx264 \
+       -pix_fmt yuv420p \
        "${input.outputPath}"`,
       err => (err ? reject(err) : resolve()),
     )

@@ -13,7 +13,11 @@ export async function distortImage(input: {
 
   await new Promise<void>((resolve, reject) => {
     exec(
-      `magick "${input.inputPath}" -liquid-rescale '${Math.floor(input.percentage * 100)}%' -resize '${input.width}x${input.height}' "${input.outputPath}"`,
+      `magick \
+       "${input.inputPath}" \
+       ${input.percentage > 0 ? `-liquid-rescale '${Math.max(1, Math.floor(input.percentage * 100))}%'` : ''} \
+       -resize '${input.width}x${input.height}' \
+       "${input.outputPath}"`,
       err => (err ? reject(err) : resolve()),
     )
   })
