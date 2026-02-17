@@ -29,7 +29,8 @@ async function shutdown(signal?: string) {
 process.on('SIGINT', () => shutdown('SIGINT'))
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 
-const maxSizeBytes = 512 * 1028 * 1024 // 512 MB
+// Telegram Bot API has a download limit of 20 MB, so we can't exceed that
+const maxSizeBytes = 20 * 1028 * 1024 // 20 MB
 const maxVideoDurationSeconds = 90
 const maxAudioDurationSeconds = 300
 const maxWidth = 2048
@@ -110,11 +111,12 @@ telegraf.on(message('voice'), async context => {
         { source: outputPath },
         { reply_parameters: { message_id: context.message.message_id } },
       )
+
+      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
     } catch (err) {
       console.warn(err)
       await notify('Sorry, something went wrong. Please try another file!')
     } finally {
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
       await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
     }
   })
@@ -193,12 +195,13 @@ telegraf.on(message('audio'), async context => {
         },
         { reply_parameters: { message_id: context.message.message_id } },
       )
+
+      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
     } catch (err) {
       console.warn(err)
       await notify('Sorry, something went wrong. Please try another file!')
     } finally {
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
-      // await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
+      await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
     }
   })
 
@@ -268,11 +271,12 @@ telegraf.on(message('sticker'), async context => {
         { source: outputPath },
         { reply_parameters: { message_id: context.message.message_id } },
       )
+
+      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
     } catch (err) {
       console.warn(err)
       await notify('Sorry, something went wrong. Please try another file!')
     } finally {
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
       await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
     }
   })
@@ -326,11 +330,12 @@ telegraf.on(message('photo'), async context => {
         { source: outputPath },
         { reply_parameters: { message_id: context.message.message_id } },
       )
+
+      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
     } catch (err) {
       console.warn(err)
       await notify('Sorry, something went wrong. Please try another file!')
     } finally {
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
       await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
     }
   })
@@ -450,11 +455,12 @@ telegraf.on(message('video_note'), async context => {
         { source: outputPath },
         { reply_parameters: { message_id: context.message.message_id } },
       )
+
+      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
     } catch (err) {
       console.warn(err)
       await notify('Sorry, something went wrong. Please try another file!')
     } finally {
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
       await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
     }
   })
@@ -592,11 +598,12 @@ telegraf.on(message('video'), async context => {
         { source: outputPath },
         { reply_parameters: { message_id: context.message.message_id } },
       )
+
+      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
     } catch (err) {
       console.warn(err)
       await notify('Sorry, something went wrong. Please try another file!')
     } finally {
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
       await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
     }
   })
@@ -733,11 +740,12 @@ telegraf.on(message('animation'), async context => {
         { source: outputPath },
         { reply_parameters: { message_id: context.message.message_id } },
       )
+
+      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
     } catch (err) {
       console.warn(err)
       await notify('Sorry, something went wrong. Please try another file!')
     } finally {
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
       await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
     }
   })
