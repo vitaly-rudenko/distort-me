@@ -20,6 +20,7 @@ export async function combineFrames(input: {
 
   const filterArgument = filters.length > 0 ? ` -filter:a "${filters.join(',')}"` : ''
 
+  // scale is needed for libx264 (it requires even dimensions)
   await new Promise<void>((resolve, reject) => {
     exec(
       `ffmpeg \
@@ -30,6 +31,7 @@ export async function combineFrames(input: {
        ${filterArgument} \
        ${input.audio ? `-c:a libopus` : ''} \
        ${input.audio ? `-b:a 192k` : ''} \
+       -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
        -c:v libx264 \
        -crf 18 \
        -preset slow \
