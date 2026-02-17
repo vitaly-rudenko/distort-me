@@ -10,6 +10,7 @@ import { distortAudio } from './tools/distort-audio.ts'
 import { getAudioSampleRate } from './tools/get-audio-sample-rate.ts'
 import { extractFrames } from './tools/extract-frames.ts'
 import { combineFrames } from './tools/combine-frames.ts'
+import pAll from 'p-all'
 
 // TODO: telegram debug chat error logs
 
@@ -34,6 +35,7 @@ const maxWidth = 2048
 const maxHeight = 1556
 const maxDiameter = Math.ceil(Math.sqrt(maxWidth ** 2 + maxHeight ** 2))
 const supportedMimeTypes = ['video/quicktime', 'video/mp4', 'audio/ogg', 'audio/mpeg']
+const concurrency = 4
 
 // TODO: add support for parallel processing of multiple files
 const queue = new Queue({ limit: 100 })
@@ -403,25 +405,32 @@ telegraf.on(message('video_note'), async context => {
       filenames.sort((a, b) => parseInt(a) - parseInt(b))
 
       let lastUpdatedAt = 0
-      for (const [i, filename] of filenames.entries()) {
-        if (Date.now() - lastUpdatedAt >= 3000) {
-          lastUpdatedAt = Date.now()
-          await notify(`Distorting frames (${Math.floor((i / filenames.length) * 100)}%)`)
-        }
+      let processed = 0
 
-        const percentage = i / (filenames.length - 1)
-        const rescale = 40 + 50 * (1 - percentage)
+      await pAll(
+        filenames.map((filename, i) => async () => {
+          processed++
 
-        const filePath = `./local/operations/${operationId}/original/${filename}`
+          if (Date.now() - lastUpdatedAt >= 3000) {
+            lastUpdatedAt = Date.now()
+            await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
+          }
 
-        await distortImage({
-          inputPath: filePath,
-          outputPath: `./local/operations/${operationId}/distorted/${filename}`,
-          width,
-          height,
-          rescale,
-        })
-      }
+          const percentage = i / (filenames.length - 1)
+          const rescale = 40 + 50 * (1 - percentage)
+
+          const filePath = `./local/operations/${operationId}/original/${filename}`
+
+          await distortImage({
+            inputPath: filePath,
+            outputPath: `./local/operations/${operationId}/distorted/${filename}`,
+            width,
+            height,
+            rescale,
+          })
+        }),
+        { concurrency },
+      )
 
       await notify('Creating a video note')
       await combineFrames({
@@ -538,25 +547,32 @@ telegraf.on(message('video'), async context => {
       filenames.sort((a, b) => parseInt(a) - parseInt(b))
 
       let lastUpdatedAt = 0
-      for (const [i, filename] of filenames.entries()) {
-        if (Date.now() - lastUpdatedAt >= 3000) {
-          lastUpdatedAt = Date.now()
-          await notify(`Distorting frames (${Math.floor((i / filenames.length) * 100)}%)`)
-        }
+      let processed = 0
 
-        const percentage = i / (filenames.length - 1)
-        const rescale = 40 + 50 * (1 - percentage)
+      await pAll(
+        filenames.map((filename, i) => async () => {
+          processed++
 
-        const filePath = `./local/operations/${operationId}/original/${filename}`
+          if (Date.now() - lastUpdatedAt >= 3000) {
+            lastUpdatedAt = Date.now()
+            await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
+          }
 
-        await distortImage({
-          inputPath: filePath,
-          outputPath: `./local/operations/${operationId}/distorted/${filename}`,
-          width,
-          height,
-          rescale,
-        })
-      }
+          const percentage = i / (filenames.length - 1)
+          const rescale = 40 + 50 * (1 - percentage)
+
+          const filePath = `./local/operations/${operationId}/original/${filename}`
+
+          await distortImage({
+            inputPath: filePath,
+            outputPath: `./local/operations/${operationId}/distorted/${filename}`,
+            width,
+            height,
+            rescale,
+          })
+        }),
+        { concurrency },
+      )
 
       await notify('Creating a video')
       await combineFrames({
@@ -672,25 +688,32 @@ telegraf.on(message('animation'), async context => {
       filenames.sort((a, b) => parseInt(a) - parseInt(b))
 
       let lastUpdatedAt = 0
-      for (const [i, filename] of filenames.entries()) {
-        if (Date.now() - lastUpdatedAt >= 3000) {
-          lastUpdatedAt = Date.now()
-          await notify(`Distorting frames (${Math.floor((i / filenames.length) * 100)}%)`)
-        }
+      let processed = 0
 
-        const percentage = i / (filenames.length - 1)
-        const rescale = 40 + 50 * (1 - percentage)
+      await pAll(
+        filenames.map((filename, i) => async () => {
+          processed++
 
-        const filePath = `./local/operations/${operationId}/original/${filename}`
+          if (Date.now() - lastUpdatedAt >= 3000) {
+            lastUpdatedAt = Date.now()
+            await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
+          }
 
-        await distortImage({
-          inputPath: filePath,
-          outputPath: `./local/operations/${operationId}/distorted/${filename}`,
-          width,
-          height,
-          rescale,
-        })
-      }
+          const percentage = i / (filenames.length - 1)
+          const rescale = 40 + 50 * (1 - percentage)
+
+          const filePath = `./local/operations/${operationId}/original/${filename}`
+
+          await distortImage({
+            inputPath: filePath,
+            outputPath: `./local/operations/${operationId}/distorted/${filename}`,
+            width,
+            height,
+            rescale,
+          })
+        }),
+        { concurrency },
+      )
 
       await notify('Creating an animation')
       await combineFrames({
