@@ -30,9 +30,10 @@ process.on('SIGINT', () => shutdown('SIGINT'))
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 
 const maxSizeBytes = 512 * 1028 * 1024 // 512 MB
-const maxDurationSeconds = 90
+const maxVideoDurationSeconds = 90
+const maxAudioDurationSeconds = 300
 const maxWidth = 2048
-const maxHeight = 1556
+const maxHeight = 2048
 const maxDiameter = Math.ceil(Math.sqrt(maxWidth ** 2 + maxHeight ** 2))
 const supportedMimeTypes = ['video/quicktime', 'video/mp4', 'audio/ogg', 'audio/mpeg']
 const concurrency = 4
@@ -48,8 +49,8 @@ await fs.rm('./local/operations', { recursive: true, force: true })
 
 telegraf.on(message('voice'), async context => {
   const durationSeconds = context.message.voice.duration
-  if (durationSeconds > maxDurationSeconds) {
-    await context.reply(`Max duration: ${maxDurationSeconds} seconds (provided: ${durationSeconds})`)
+  if (durationSeconds > maxAudioDurationSeconds) {
+    await context.reply(`Max duration: ${maxAudioDurationSeconds} seconds (provided: ${durationSeconds})`)
     return
   }
 
@@ -126,8 +127,8 @@ telegraf.on(message('voice'), async context => {
 
 telegraf.on(message('audio'), async context => {
   const durationSeconds = context.message.audio.duration
-  if (durationSeconds > maxDurationSeconds) {
-    await context.reply(`Max duration: ${maxDurationSeconds} seconds (provided: ${durationSeconds})`)
+  if (durationSeconds > maxAudioDurationSeconds) {
+    await context.reply(`Max duration: ${maxAudioDurationSeconds} seconds (provided: ${durationSeconds})`)
     return
   }
 
@@ -342,8 +343,8 @@ telegraf.on(message('photo'), async context => {
 
 telegraf.on(message('video_note'), async context => {
   const durationSeconds = context.message.video_note.duration
-  if (durationSeconds > maxDurationSeconds) {
-    await context.reply(`Max duration: ${maxDurationSeconds} seconds (provided: ${durationSeconds})`)
+  if (durationSeconds > maxVideoDurationSeconds) {
+    await context.reply(`Max duration: ${maxVideoDurationSeconds} seconds (provided: ${durationSeconds})`)
     return
   }
 
@@ -466,8 +467,8 @@ telegraf.on(message('video_note'), async context => {
 
 telegraf.on(message('video'), async context => {
   const durationSeconds = context.message.video.duration
-  if (durationSeconds > maxDurationSeconds) {
-    await context.reply(`Max duration: ${maxDurationSeconds} seconds (provided: ${durationSeconds})`)
+  if (durationSeconds > maxVideoDurationSeconds) {
+    await context.reply(`Max duration: ${maxVideoDurationSeconds} seconds (provided: ${durationSeconds})`)
     return
   }
 
@@ -608,8 +609,8 @@ telegraf.on(message('video'), async context => {
 
 telegraf.on(message('animation'), async context => {
   const durationSeconds = context.message.animation.duration
-  if (durationSeconds > maxDurationSeconds) {
-    await context.reply(`Max duration: ${maxDurationSeconds} seconds (provided: ${durationSeconds})`)
+  if (durationSeconds > maxVideoDurationSeconds) {
+    await context.reply(`Max duration: ${maxVideoDurationSeconds} seconds (provided: ${durationSeconds})`)
     return
   }
 
