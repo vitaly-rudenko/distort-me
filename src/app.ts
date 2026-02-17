@@ -385,7 +385,7 @@ telegraf.on(message('video_note'), async context => {
 
       let lastUpdatedAt = 0
       for (const [i, filename] of filenames.entries()) {
-        if (Date.now() - lastUpdatedAt >= 5000) {
+        if (Date.now() - lastUpdatedAt >= 3000) {
           lastUpdatedAt = Date.now()
           await notify(`Distorting frames (${Math.floor((i / filenames.length) * 100)}%)`)
         }
@@ -520,7 +520,7 @@ telegraf.on(message('video'), async context => {
 
       let lastUpdatedAt = 0
       for (const [i, filename] of filenames.entries()) {
-        if (Date.now() - lastUpdatedAt >= 5000) {
+        if (Date.now() - lastUpdatedAt >= 3000) {
           lastUpdatedAt = Date.now()
           await notify(`Distorting frames (${Math.floor((i / filenames.length) * 100)}%)`)
         }
@@ -654,7 +654,7 @@ telegraf.on(message('animation'), async context => {
 
       let lastUpdatedAt = 0
       for (const [i, filename] of filenames.entries()) {
-        if (Date.now() - lastUpdatedAt >= 5000) {
+        if (Date.now() - lastUpdatedAt >= 3000) {
           lastUpdatedAt = Date.now()
           await notify(`Distorting frames (${Math.floor((i / filenames.length) * 100)}%)`)
         }
