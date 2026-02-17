@@ -35,6 +35,7 @@ const maxHeight = 1556
 const maxDiameter = Math.ceil(Math.sqrt(maxWidth ** 2 + maxHeight ** 2))
 const supportedMimeTypes = ['video/quicktime', 'video/mp4', 'audio/ogg', 'audio/mpeg']
 
+// TODO: add support for parallel processing of multiple files
 const queue = new Queue({ limit: 100 })
 
 // TODO: don't let one person fill up the queue
