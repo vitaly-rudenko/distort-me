@@ -11,7 +11,22 @@ import { getAudioSampleRate } from './tools/get-audio-sample-rate.ts'
 import { extractFrames } from './tools/extract-frames.ts'
 import { combineFrames } from './tools/combine-frames.ts'
 
+// TODO: telegram debug chat error logs
+
 const telegraf = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!)
+
+async function shutdown(signal?: string) {
+  console.log(`Received ${signal || 'NOSIGNAL'}, shutting down gracefully`)
+
+  try {
+    telegraf.stop()
+  } catch {}
+
+  process.exit(0)
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'))
+process.on('SIGTERM', () => shutdown('SIGTERM'))
 
 const maxSizeBytes = 512 * 1028 * 1024 // 512 MB
 const maxDurationSeconds = 90
@@ -24,6 +39,9 @@ const queue = new Queue({ limit: 100 })
 
 // TODO: don't let one person fill up the queue
 // TODO: support in groups
+
+// Clean up
+await fs.rm('./local/operations', { recursive: true, force: true })
 
 telegraf.on(message('voice'), async context => {
   const durationSeconds = context.message.voice.duration
