@@ -54,7 +54,7 @@ telegraf.on(message('voice'), async context => {
     return
   }
 
-  const message = await context.reply('Warming up...', {
+  const message = await context.reply('Queued', {
     reply_parameters: { message_id: context.message.message_id },
     disable_notification: true,
   })
@@ -63,7 +63,7 @@ telegraf.on(message('voice'), async context => {
     await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
   }
 
-  const position = queue.enqueue(async () => {
+  const enqueued = queue.enqueue(async () => {
     const fileId = context.message.voice.file_id
     const operationId = uuid.v4()
     const inputPath = `./local/operations/${operationId}/input.ogg`
@@ -72,17 +72,17 @@ telegraf.on(message('voice'), async context => {
     try {
       await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
 
-      await notify('Downloading...')
+      await notify('Downloading')
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await notify('Verifying...')
+      await notify('Verifying')
       const sampleRate = await getAudioSampleRate({ path: inputPath })
 
-      await notify('Distorting...')
+      await notify('Distorting')
       await distortAudio({ inputPath, outputPath, sampleRate, percentage: 0.7, pitch: 1.25, format: 'ogg' })
 
-      await notify('Sending...')
+      await notify('Sending')
       await telegraf.telegram.sendVoice(
         context.message.chat.id,
         { source: outputPath },
@@ -97,13 +97,9 @@ telegraf.on(message('voice'), async context => {
     }
   })
 
-  if (!position) {
+  if (!enqueued) {
     await notify('Sorry, the queue is full. Please try again later!')
     return
-  }
-
-  if (position.index > 0) {
-    await notify('Queued...')
   }
 })
 
@@ -136,7 +132,7 @@ telegraf.on(message('audio'), async context => {
     return
   }
 
-  const message = await context.reply('Warming up...', {
+  const message = await context.reply('Queued', {
     reply_parameters: { message_id: context.message.message_id },
     disable_notification: true,
   })
@@ -145,7 +141,7 @@ telegraf.on(message('audio'), async context => {
     await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
   }
 
-  const position = queue.enqueue(async () => {
+  const enqueued = queue.enqueue(async () => {
     const fileId = context.message.audio.file_id
     const operationId = uuid.v4()
     const inputPath = `./local/operations/${operationId}/input.mp3`
@@ -154,17 +150,17 @@ telegraf.on(message('audio'), async context => {
     try {
       await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
 
-      await notify('Downloading...')
+      await notify('Downloading')
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await notify('Verifying...')
+      await notify('Verifying')
       const sampleRate = await getAudioSampleRate({ path: inputPath })
 
-      await notify('Distorting...')
+      await notify('Distorting')
       await distortAudio({ inputPath, outputPath, sampleRate, percentage: 0.7, pitch: 1.25, format: 'mp3' })
 
-      await notify('Sending...')
+      await notify('Sending')
       await telegraf.telegram.sendAudio(
         context.message.chat.id,
         {
@@ -184,13 +180,9 @@ telegraf.on(message('audio'), async context => {
     }
   })
 
-  if (!position) {
+  if (!enqueued) {
     await notify('Sorry, the queue is full. Please try again later!')
     return
-  }
-
-  if (position.index > 0) {
-    await notify('Queued...')
   }
 })
 
@@ -220,7 +212,7 @@ telegraf.on(message('sticker'), async context => {
     return
   }
 
-  const message = await context.reply('Warming up...', {
+  const message = await context.reply('Queued', {
     reply_parameters: { message_id: context.message.message_id },
     disable_notification: true,
   })
@@ -229,7 +221,7 @@ telegraf.on(message('sticker'), async context => {
     await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
   }
 
-  const position = queue.enqueue(async () => {
+  const enqueued = queue.enqueue(async () => {
     const fileId = context.message.sticker.file_id
     const operationId = uuid.v4()
     const inputPath = `./local/operations/${operationId}/input.webp`
@@ -238,17 +230,17 @@ telegraf.on(message('sticker'), async context => {
     try {
       await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
 
-      await notify('Downloading...')
+      await notify('Downloading')
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await notify('Verifying...')
+      await notify('Verifying')
       const [width, height] = await getImageDimensions({ path: inputPath })
 
-      await notify('Distorting...')
+      await notify('Distorting')
       await distortImage({ inputPath, outputPath, rescale: 50, width, height })
 
-      await notify('Sending...')
+      await notify('Sending')
       await telegraf.telegram.sendSticker(
         context.message.chat.id,
         { source: outputPath },
@@ -263,13 +255,9 @@ telegraf.on(message('sticker'), async context => {
     }
   })
 
-  if (!position) {
+  if (!enqueued) {
     await notify('Sorry, the queue is full. Please try again later!')
     return
-  }
-
-  if (position.index > 0) {
-    await notify('Queued...')
   }
 })
 
@@ -282,7 +270,7 @@ telegraf.on(message('photo'), async context => {
     return
   }
 
-  const message = await context.reply('Warming up...', {
+  const message = await context.reply('Queued', {
     reply_parameters: { message_id: context.message.message_id },
     disable_notification: true,
   })
@@ -291,7 +279,7 @@ telegraf.on(message('photo'), async context => {
     await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
   }
 
-  const position = queue.enqueue(async () => {
+  const enqueued = queue.enqueue(async () => {
     const fileId = photo.file_id
     const operationId = uuid.v4()
     const inputPath = `./local/operations/${operationId}/input.jpeg`
@@ -300,17 +288,17 @@ telegraf.on(message('photo'), async context => {
     try {
       await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
 
-      await notify('Downloading...')
+      await notify('Downloading')
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await notify('Verifying...')
+      await notify('Verifying')
       const [width, height] = await getImageDimensions({ path: inputPath })
 
-      await notify('Distorting...')
+      await notify('Distorting')
       await distortImage({ inputPath, outputPath, rescale: 50, width, height })
 
-      await notify('Sending...')
+      await notify('Sending')
       await telegraf.telegram.sendPhoto(
         context.message.chat.id,
         { source: outputPath },
@@ -325,13 +313,9 @@ telegraf.on(message('photo'), async context => {
     }
   })
 
-  if (!position) {
+  if (!enqueued) {
     await notify('Sorry, the queue is full. Please try again later!')
     return
-  }
-
-  if (position.index > 0) {
-    await notify('Queued...')
   }
 })
 
@@ -358,7 +342,7 @@ telegraf.on(message('video_note'), async context => {
     return
   }
 
-  const message = await context.reply('Queued...', {
+  const message = await context.reply('Queued', {
     reply_parameters: { message_id: context.message.message_id },
     disable_notification: true,
   })
@@ -367,7 +351,7 @@ telegraf.on(message('video_note'), async context => {
     await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
   }
 
-  const position = queue.enqueue(async () => {
+  const enqueued = queue.enqueue(async () => {
     const fileId = context.message.video_note.file_id
     const operationId = uuid.v4()
     const inputPath = `./local/operations/${operationId}/input.mp4`
@@ -446,7 +430,7 @@ telegraf.on(message('video_note'), async context => {
     }
   })
 
-  if (!position) {
+  if (!enqueued) {
     await notify('Sorry, the queue is full. Please try again later!')
     return
   }
@@ -493,7 +477,7 @@ telegraf.on(message('video'), async context => {
     return
   }
 
-  const message = await context.reply('Queued...', {
+  const message = await context.reply('Queued', {
     reply_parameters: { message_id: context.message.message_id },
     disable_notification: true,
   })
@@ -502,7 +486,7 @@ telegraf.on(message('video'), async context => {
     await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
   }
 
-  const position = queue.enqueue(async () => {
+  const enqueued = queue.enqueue(async () => {
     const fileId = context.message.video.file_id
     const operationId = uuid.v4()
     const inputPath = `./local/operations/${operationId}/input.mp4`
@@ -581,7 +565,7 @@ telegraf.on(message('video'), async context => {
     }
   })
 
-  if (!position) {
+  if (!enqueued) {
     await notify('Sorry, the queue is full. Please try again later!')
     return
   }
@@ -628,7 +612,7 @@ telegraf.on(message('animation'), async context => {
     return
   }
 
-  const message = await context.reply('Queued...', {
+  const message = await context.reply('Queued', {
     reply_parameters: { message_id: context.message.message_id },
     disable_notification: true,
   })
@@ -637,7 +621,7 @@ telegraf.on(message('animation'), async context => {
     await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
   }
 
-  const position = queue.enqueue(async () => {
+  const enqueued = queue.enqueue(async () => {
     const fileId = context.message.animation.file_id
     const operationId = uuid.v4()
     const inputPath = `./local/operations/${operationId}/input.mp4`
@@ -715,7 +699,7 @@ telegraf.on(message('animation'), async context => {
     }
   })
 
-  if (!position) {
+  if (!enqueued) {
     await notify('Sorry, the queue is full. Please try again later!')
     return
   }

@@ -9,15 +9,15 @@ export class Queue {
     this.limit = options.limit
   }
 
-  enqueue(callback: () => Promise<void>): { index: number } | undefined {
+  enqueue(callback: () => Promise<void>): boolean {
     if (this.pending.length >= this.limit) {
-      return undefined
+      return false
     }
 
     this.pending.push(callback)
     this.promise = this.promise.then(() => this.take())
 
-    return { index: this.pending.length - 1 }
+    return true
   }
 
   private async take() {
