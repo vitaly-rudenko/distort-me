@@ -6,6 +6,7 @@ export async function distortAudio(input: {
   sampleRate: number
   percentage: number
   pitch: number
+  format: 'mp3' | 'ogg'
 }) {
   const filters = [
     //
@@ -21,8 +22,9 @@ export async function distortAudio(input: {
       `ffmpeg \
        -i "${input.inputPath}" \
        ${filterArgument} \
-       -c:a libopus \
-       -shortest \
+       ${input.format === 'ogg' ? '-c:a libopus' : ''} \
+       ${input.format === 'mp3' ? '-c:a libmp3lame' : ''} \
+       -b:a 192k \
        "${input.outputPath}"`,
       err => (err ? reject(err) : resolve()),
     )

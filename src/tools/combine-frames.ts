@@ -8,11 +8,13 @@ export async function combineFrames(input: {
   sampleRate: number
   percentage: number
   pitch: number
+  audio: boolean
 }) {
   const filters = [
     //
-    input.percentage !== 0 && `vibrato=f=10:d=${input.percentage}`,
-    input.pitch !== 1 &&
+    input.audio && input.percentage !== 0 && `vibrato=f=10:d=${input.percentage}`,
+    input.audio &&
+      input.pitch !== 1 &&
       `asetrate=${input.sampleRate}*${input.pitch},aresample=${input.sampleRate},atempo=1/${input.pitch}`,
   ].filter(Boolean)
 
@@ -24,11 +26,10 @@ export async function combineFrames(input: {
        -framerate 24 \
        -start_number 1 \
        -i "${input.inputDirectory}/%d.jpg" \
-       -i "${input.inputPath}" \
+       ${input.audio ? `-i "${input.inputPath}"` : ''} \
        ${filterArgument} \
-       -c:a libopus \
-       -b:a 192k \
-       -shortest \
+       ${input.audio ? `-c:a libopus` : ''} \
+       ${input.audio ? `-b:a 192k` : ''} \
        -c:v libx264 \
        -crf 18 \
        -preset slow \
