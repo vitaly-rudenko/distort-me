@@ -5,11 +5,15 @@ export async function combineFrames(input: {
   inputPath: string
   inputDirectory: string
   outputPath: string
-  sampleRate: number
+  sampleRate: number | null
   percentage: number
   pitch: number
   audio: boolean
 }) {
+  if (input.audio !== Boolean(input.sampleRate)) {
+    throw new Error('Both sampleRate and audio must be set or unset at the same time')
+  }
+
   const filters = [
     //
     input.audio && input.percentage !== 0 && `vibrato=f=10:d=${input.percentage}`,
@@ -29,6 +33,8 @@ export async function combineFrames(input: {
        -i "${input.inputDirectory}/%d.jpg" \
        ${input.audio ? `-i "${input.inputPath}"` : ''} \
        ${filterArgument} \
+       -map 0:v:0 \
+       ${input.audio ? `-map 1:a:0` : ''} \
        ${input.audio ? `-c:a libopus` : ''} \
        ${input.audio ? `-b:a 192k` : ''} \
        -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \

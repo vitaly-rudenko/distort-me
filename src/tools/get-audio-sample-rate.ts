@@ -13,9 +13,13 @@ export async function getAudioSampleRate(input: { path: string }) {
     )
   })
 
-  if (!Number.isSafeInteger(Number(sampleRate))) {
+  if (sampleRate.trim() === '') {
+    return null
+  }
+
+  if (!Number.isSafeInteger(Number(sampleRate.trim()))) {
     throw new Error(`Could not determine sample rate (path: ${input.path})`)
   }
 
-  return Number(sampleRate)
+  return Number(sampleRate.trim())
 }

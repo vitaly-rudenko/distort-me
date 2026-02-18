@@ -101,9 +101,19 @@ telegraf.on(message('voice'), async context => {
 
       await notify('Verifying')
       const sampleRate = await getAudioSampleRate({ path: inputPath })
+      if (!sampleRate) {
+        throw new Error('Could not determine sample rate')
+      }
 
       await notify('Distorting')
-      await distortAudio({ inputPath, outputPath, sampleRate, percentage: 0.7, pitch: 1.25, format: 'ogg' })
+      await distortAudio({
+        inputPath,
+        outputPath,
+        sampleRate,
+        percentage: 0.7,
+        pitch: 1.25,
+        format: 'ogg',
+      })
 
       await notify('Sending')
       await telegraf.telegram.sendVoice(
@@ -180,9 +190,19 @@ telegraf.on(message('audio'), async context => {
 
       await notify('Verifying')
       const sampleRate = await getAudioSampleRate({ path: inputPath })
+      if (!sampleRate) {
+        throw new Error('Could not determine sample rate')
+      }
 
       await notify('Distorting')
-      await distortAudio({ inputPath, outputPath, sampleRate, percentage: 0.7, pitch: 1.25, format: 'mp3' })
+      await distortAudio({
+        inputPath,
+        outputPath,
+        sampleRate,
+        percentage: 0.7,
+        pitch: 1.25,
+        format: 'mp3',
+      })
 
       await notify('Sending')
       await telegraf.telegram.sendAudio(
@@ -446,7 +466,7 @@ telegraf.on(message('video_note'), async context => {
         percentage: 0.7,
         pitch: 1.25,
         sampleRate,
-        audio: true,
+        audio: Boolean(sampleRate),
       })
 
       await notify('Sending')
@@ -589,7 +609,7 @@ telegraf.on(message('video'), async context => {
         percentage: 0.7,
         pitch: 1.25,
         sampleRate,
-        audio: true,
+        audio: Boolean(sampleRate),
       })
 
       await notify('Sending')
