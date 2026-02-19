@@ -44,6 +44,7 @@ const queue = new Queue({ limit: 100 })
 
 // TODO: don't let one person fill up the queue
 // TODO: support in groups
+// TODO: add support for video stickers
 
 // Clean up
 await fs.rm('./local/operations', { recursive: true, force: true })
@@ -749,7 +750,7 @@ telegraf.on(message('animation'), async context => {
         outputPath,
         inputDirectory: `./local/operations/${operationId}/distorted`,
         percentage: null,
-        pitch: null,
+        pitch: -1,
         sampleRate: null,
         audio: false,
       })
