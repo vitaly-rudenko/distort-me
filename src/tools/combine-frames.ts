@@ -6,8 +6,8 @@ export async function combineFrames(input: {
   inputDirectory: string
   outputPath: string
   sampleRate: number | null
-  percentage: number
-  pitch: number
+  percentage: number | null
+  pitch: number | null
   audio: boolean
 }) {
   if (input.audio !== Boolean(input.sampleRate)) {
@@ -15,10 +15,10 @@ export async function combineFrames(input: {
   }
 
   const filters = [
-    //
-    input.audio && input.percentage !== 0 && `vibrato=f=10:d=${input.percentage}`,
+    input.audio && input.percentage !== null && input.percentage !== 0 && `vibrato=f=10:d=${input.percentage}`,
     input.audio &&
       input.pitch !== 1 &&
+      input.pitch !== null &&
       `asetrate=${input.sampleRate}*${input.pitch},aresample=${input.sampleRate},atempo=1/${input.pitch}`,
   ].filter(Boolean)
 

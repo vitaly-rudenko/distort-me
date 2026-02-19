@@ -748,9 +748,9 @@ telegraf.on(message('animation'), async context => {
         inputPath,
         outputPath,
         inputDirectory: `./local/operations/${operationId}/distorted`,
-        percentage: -1,
-        pitch: -1,
-        sampleRate: -1,
+        percentage: null,
+        pitch: null,
+        sampleRate: null,
         audio: false,
       })
 
