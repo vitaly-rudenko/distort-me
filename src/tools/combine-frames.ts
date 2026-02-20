@@ -42,6 +42,7 @@ export async function combineFrames(input: {
        -crf 18 \
        -preset slow \
        -pix_fmt yuv420p \
+       -movflags +faststart \
        "${input.outputPath}"`,
       err => (err ? reject(err) : resolve()),
     )
