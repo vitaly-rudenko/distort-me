@@ -559,8 +559,8 @@ async function handleDistortMedia(
 // Clean up
 await fs.rm('./local/operations', { recursive: true, force: true })
 
-// Bot should not work in channels
-telegraf.use((context, next) => {
+// Do not allow this bot to be used in channels
+telegraf.use(async (context, next) => {
   if (context.chat?.type === 'channel') return
   return next()
 })
@@ -581,7 +581,7 @@ telegraf.command('distort', async context => {
 })
 
 // Direct media messages should only be handled in private chats
-telegraf.use((context, next) => {
+bot.use(async (context, next) => {
   if (context.chat?.type !== 'private') return
   return next()
 })
