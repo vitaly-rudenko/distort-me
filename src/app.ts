@@ -100,7 +100,6 @@ telegraf.on(message('voice'), async context => {
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await notify('Verifying')
       const sampleRate = await getAudioSampleRate({ path: inputPath })
       if (!sampleRate) {
         throw new Error('Could not determine sample rate')
@@ -116,7 +115,6 @@ telegraf.on(message('voice'), async context => {
         format: 'ogg',
       })
 
-      await notify('Sending')
       await telegraf.telegram.sendVoice(
         context.message.chat.id,
         { source: outputPath },
@@ -189,7 +187,6 @@ telegraf.on(message('audio'), async context => {
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await notify('Verifying')
       const sampleRate = await getAudioSampleRate({ path: inputPath })
       if (!sampleRate) {
         throw new Error('Could not determine sample rate')
@@ -205,7 +202,6 @@ telegraf.on(message('audio'), async context => {
         format: 'mp3',
       })
 
-      await notify('Sending')
       await telegraf.telegram.sendAudio(
         context.message.chat.id,
         {
@@ -277,13 +273,11 @@ telegraf.on(message('sticker'), async context => {
         const url = await telegraf.telegram.getFileLink(fileId)
         await downloadFile({ url, path: inputPath })
 
-        await notify('Extracting frames')
         await extractFrames({
           inputPath,
           outputDirectory: `./local/operations/${operationId}/original`,
         })
 
-        await notify('Verifying')
         const [width, height] = await getImageDimensions({
           path: `./local/operations/${operationId}/original/1.jpg`,
         })
@@ -317,7 +311,7 @@ telegraf.on(message('sticker'), async context => {
           { concurrency },
         )
 
-        await notify('Creating a sticker')
+        await notify('Creating a video sticker')
         await combineFrames({
           inputPath,
           outputPath,
@@ -329,7 +323,6 @@ telegraf.on(message('sticker'), async context => {
           format: 'webm',
         })
 
-        await notify('Sending')
         await telegraf.telegram.sendSticker(
           context.message.chat.id,
           { source: outputPath },
@@ -365,13 +358,11 @@ telegraf.on(message('sticker'), async context => {
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await notify('Verifying')
       const [width, height] = await getImageDimensions({ path: inputPath })
 
       await notify('Distorting')
       await distortImage({ inputPath, outputPath, rescale: 50, width, height })
 
-      await notify('Sending')
       await telegraf.telegram.sendSticker(
         context.message.chat.id,
         { source: outputPath },
@@ -424,13 +415,11 @@ telegraf.on(message('photo'), async context => {
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await notify('Verifying')
       const [width, height] = await getImageDimensions({ path: inputPath })
 
       await notify('Distorting')
       await distortImage({ inputPath, outputPath, rescale: 50, width, height })
 
-      await notify('Sending')
       await telegraf.telegram.sendPhoto(
         context.message.chat.id,
         { source: outputPath },
@@ -498,13 +487,11 @@ telegraf.on(message('video_note'), async context => {
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await notify('Extracting frames')
       await extractFrames({
         inputPath,
         outputDirectory: `./local/operations/${operationId}/original`,
       })
 
-      await notify('Verifying')
       const sampleRate = await getAudioSampleRate({ path: inputPath })
       const [width, height] = await getImageDimensions({
         path: `./local/operations/${operationId}/original/1.jpg`,
@@ -556,7 +543,6 @@ telegraf.on(message('video_note'), async context => {
         format: 'mp4',
       })
 
-      await notify('Sending')
       await telegraf.telegram.sendVideoNote(
         context.message.chat.id,
         { source: outputPath },
@@ -642,13 +628,11 @@ telegraf.on(message('video'), async context => {
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await notify('Extracting frames')
       await extractFrames({
         inputPath,
         outputDirectory: `./local/operations/${operationId}/original`,
       })
 
-      await notify('Verifying')
       const sampleRate = await getAudioSampleRate({ path: inputPath })
       const [width, height] = await getImageDimensions({
         path: `./local/operations/${operationId}/original/1.jpg`,
@@ -700,7 +684,6 @@ telegraf.on(message('video'), async context => {
         format: 'mp4',
       })
 
-      await notify('Sending')
       await telegraf.telegram.sendVideo(
         context.message.chat.id,
         { source: outputPath },
@@ -786,13 +769,11 @@ telegraf.on(message('animation'), async context => {
       const url = await telegraf.telegram.getFileLink(fileId)
       await downloadFile({ url, path: inputPath })
 
-      await notify('Extracting frames')
       await extractFrames({
         inputPath,
         outputDirectory: `./local/operations/${operationId}/original`,
       })
 
-      await notify('Verifying')
       const [width, height] = await getImageDimensions({
         path: `./local/operations/${operationId}/original/1.jpg`,
       })
@@ -843,7 +824,6 @@ telegraf.on(message('animation'), async context => {
         format: 'mp4',
       })
 
-      await notify('Sending')
       await telegraf.telegram.sendAnimation(
         context.message.chat.id,
         { source: outputPath },
