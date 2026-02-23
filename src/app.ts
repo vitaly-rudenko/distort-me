@@ -581,7 +581,7 @@ telegraf.command('distort', async context => {
 })
 
 // Direct media messages should only be handled in private chats
-bot.use(async (context, next) => {
+telegraf.use(async (context, next) => {
   if (context.chat?.type !== 'private') return
   return next()
 })
