@@ -566,7 +566,16 @@ telegraf.use((context, next) => {
 })
 
 telegraf.command('distort', async context => {
-  if (!context.message.reply_to_message) return // TODO: add error message
+  if (!context.message.reply_to_message) {
+    await context.reply('Reply to a media using /distort command', {
+      reply_parameters: {
+        chat_id: context.message.chat.id,
+        message_id: context.message.message_id,
+        allow_sending_without_reply: true,
+      },
+    })
+    return
+  }
 
   await handleDistortMedia(context.message.reply_to_message, context, context.message)
 })
