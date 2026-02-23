@@ -1,5 +1,5 @@
 import fs from 'fs/promises'
-import { Telegraf } from 'telegraf'
+import { Context, Telegraf } from 'telegraf'
 import { message } from 'telegraf/filters'
 import * as uuid from 'uuid'
 import { Queue } from './utils/queue.ts'
@@ -11,6 +11,7 @@ import { getAudioSampleRate } from './tools/get-audio-sample-rate.ts'
 import { extractFrames } from './tools/extract-frames.ts'
 import { combineFrames } from './tools/combine-frames.ts'
 import pAll from 'p-all'
+import type { Message, ReplyParameters } from 'telegraf/types'
 
 // TODO: telegram debug chat error logs
 
@@ -42,6 +43,511 @@ const concurrency = 4
 // TODO: add support for parallel processing of multiple files
 const queue = new Queue({ limit: 100 })
 
+type DistortableMessage = NonNullable<Context['message']> | NonNullable<Message.CommonMessage['reply_to_message']>
+async function handleDistortMedia(
+  message: DistortableMessage,
+  context: Context,
+  respondToMessage: Message.CommonMessage = message,
+) {
+  const reply_parameters: ReplyParameters = {
+    chat_id: respondToMessage.chat.id,
+    message_id: respondToMessage.message_id,
+    allow_sending_without_reply: true,
+  }
+
+  if ('voice' in message) {
+    const durationSeconds = message.voice.duration
+    if (durationSeconds > maxAudioDurationSeconds) {
+      await context.reply(`Max duration: ${maxAudioDurationSeconds} seconds (provided: ${durationSeconds})`, {
+        reply_parameters,
+      })
+      return
+    }
+
+    const mimeType = message.voice.mime_type
+    if (!mimeType) {
+      await context.reply('Could not determine file mime type', { reply_parameters })
+      // TODO: log
+      return
+    }
+    if (!supportedMimeTypes.includes(mimeType)) {
+      await context.reply(`Unsupported mime type: ${mimeType}`, { reply_parameters })
+      // TODO: log
+      return
+    }
+
+    const sizeBytes = message.voice.file_size
+    if (!sizeBytes) {
+      await context.reply('Could not determine file size', { reply_parameters })
+      return
+    }
+    if (sizeBytes > maxSizeBytes) {
+      await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`, { reply_parameters })
+      return
+    }
+  } else if ('audio' in message) {
+    const durationSeconds = message.audio.duration
+    if (durationSeconds > maxAudioDurationSeconds) {
+      await context.reply(`Max duration: ${maxAudioDurationSeconds} seconds (provided: ${durationSeconds})`, {
+        reply_parameters,
+      })
+      return
+    }
+
+    const mimeType = message.audio.mime_type
+    if (!mimeType) {
+      await context.reply('Could not determine file mime type', { reply_parameters })
+      // TODO: log
+      return
+    }
+    if (!supportedMimeTypes.includes(mimeType)) {
+      await context.reply(`Unsupported mime type: ${mimeType}`, { reply_parameters })
+      // TODO: log
+      return
+    }
+
+    const sizeBytes = message.audio.file_size
+    if (!sizeBytes) {
+      await context.reply('Could not determine file size', { reply_parameters })
+      return
+    }
+    if (sizeBytes > maxSizeBytes) {
+      await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`, { reply_parameters })
+      return
+    }
+  } else if ('sticker' in message) {
+    if (message.sticker.type !== 'regular') {
+      await context.reply('Masks and custom emojis are not supported', { reply_parameters })
+      return
+    }
+
+    if (message.sticker.is_animated) {
+      await context.reply('Animated stickers are not supported', { reply_parameters })
+      return
+    }
+
+    if (message.sticker.is_video) {
+      await context.reply('Sorry, video stickers are not supported yet. Coming soon!', { reply_parameters })
+      return
+    }
+
+    const sizeBytes = message.sticker.file_size
+    if (!sizeBytes) {
+      await context.reply('Could not determine file size', { reply_parameters })
+      return
+    }
+    if (sizeBytes > maxSizeBytes) {
+      await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`, { reply_parameters })
+      return
+    }
+  } else if ('photo' in message) {
+    const photo = message.photo
+      .sort((a, b) => b.width * b.height - a.width * a.height)
+      .filter(p => p.file_size && p.file_size <= maxSizeBytes && p.width <= maxWidth && p.height <= maxHeight)[0]
+    if (!photo) {
+      await context.reply('Photo is too large or invalid', { reply_parameters })
+      return
+    }
+  } else if ('video_note' in message) {
+    const durationSeconds = message.video_note.duration
+    if (durationSeconds > maxVideoDurationSeconds) {
+      await context.reply(`Max duration: ${maxVideoDurationSeconds} seconds (provided: ${durationSeconds})`, {
+        reply_parameters,
+      })
+      return
+    }
+
+    const sizeBytes = message.video_note.file_size
+    if (!sizeBytes) {
+      await context.reply('Could not determine file size', { reply_parameters })
+      return
+    }
+    if (sizeBytes > maxSizeBytes) {
+      await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`, { reply_parameters })
+      return
+    }
+
+    const diameter = message.video_note.length
+    if (diameter > maxDiameter) {
+      await context.reply(`Max diameter: ${maxDiameter} (provided: ${diameter})`, { reply_parameters })
+      return
+    }
+  } else if ('video' in message) {
+    const durationSeconds = message.video.duration
+    if (durationSeconds > maxVideoDurationSeconds) {
+      await context.reply(`Max duration: ${maxVideoDurationSeconds} seconds (provided: ${durationSeconds})`, {
+        reply_parameters,
+      })
+      return
+    }
+
+    const sizeBytes = message.video.file_size
+    if (!sizeBytes) {
+      await context.reply('Could not determine file size', { reply_parameters })
+      return
+    }
+    if (sizeBytes > maxSizeBytes) {
+      await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`, { reply_parameters })
+      return
+    }
+
+    if (message.video.width > maxWidth) {
+      await context.reply(`Max width: ${maxWidth} (provided: ${message.video.width})`, { reply_parameters })
+      return
+    }
+
+    if (message.video.height > maxHeight) {
+      await context.reply(`Max height: ${maxHeight} (provided: ${message.video.height})`, { reply_parameters })
+      return
+    }
+
+    const mimeType = message.video.mime_type
+    if (!mimeType) {
+      await context.reply('Could not determine file mime type', { reply_parameters })
+      // TODO: log
+      return
+    }
+    if (!supportedMimeTypes.includes(mimeType)) {
+      await context.reply('Unsupported mime type', { reply_parameters })
+      // TODO: log
+      return
+    }
+  } else if ('animation' in message) {
+    const durationSeconds = message.animation.duration
+    if (durationSeconds > maxVideoDurationSeconds) {
+      await context.reply(`Max duration: ${maxVideoDurationSeconds} seconds (provided: ${durationSeconds})`, {
+        reply_parameters,
+      })
+      return
+    }
+
+    const sizeBytes = message.animation.file_size
+    if (!sizeBytes) {
+      await context.reply('Could not determine file size', { reply_parameters })
+      return
+    }
+    if (sizeBytes > maxSizeBytes) {
+      await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`, { reply_parameters })
+      return
+    }
+
+    if (message.animation.width > maxWidth) {
+      await context.reply(`Max width: ${maxWidth} (provided: ${message.animation.width})`, { reply_parameters })
+      return
+    }
+
+    if (message.animation.height > maxHeight) {
+      await context.reply(`Max height: ${maxHeight} (provided: ${message.animation.height})`, { reply_parameters })
+      return
+    }
+
+    const mimeType = message.animation.mime_type
+    if (!mimeType) {
+      await context.reply('Could not determine file mime type', { reply_parameters })
+      // TODO: log
+      return
+    }
+    if (!supportedMimeTypes.includes(mimeType)) {
+      await context.reply('Unsupported mime type', { reply_parameters })
+      // TODO: log
+      return
+    }
+  } else {
+    await context.reply('This message type cannot be distorted', { reply_parameters })
+    return
+  }
+
+  const statusMessage = await context.reply('Queued', { reply_parameters, disable_notification: true })
+
+  async function notify(text: string) {
+    await telegraf.telegram
+      .editMessageText(statusMessage.chat.id, statusMessage.message_id, undefined, text)
+      .catch(() => {})
+  }
+
+  const enqueued = queue.enqueue(async () => {
+    const operationId = uuid.v4()
+
+    try {
+      if ('voice' in message) {
+        const inputPath = `./local/operations/${operationId}/input.ogg`
+        const outputPath = `./local/operations/${operationId}/output.ogg`
+
+        await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
+
+        await notify('Downloading')
+        const url = await telegraf.telegram.getFileLink(message.voice.file_id)
+        await downloadFile({ url, path: inputPath })
+
+        await notify('Verifying')
+        const sampleRate = await getAudioSampleRate({ path: inputPath })
+        if (!sampleRate) throw new Error('Could not determine sample rate')
+
+        await notify('Distorting')
+        await distortAudio({ inputPath, outputPath, sampleRate, percentage: 0.7, pitch: 1.25, format: 'ogg' })
+
+        await notify('Sending')
+        await telegraf.telegram.sendVoice(message.chat.id, { source: outputPath }, { reply_parameters })
+      } else if ('audio' in message) {
+        const inputPath = `./local/operations/${operationId}/input.mp3`
+        const outputPath = `./local/operations/${operationId}/output.mp3`
+
+        await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
+
+        await notify('Downloading')
+        const url = await telegraf.telegram.getFileLink(message.audio.file_id)
+        await downloadFile({ url, path: inputPath })
+
+        await notify('Verifying')
+        const sampleRate = await getAudioSampleRate({ path: inputPath })
+        if (!sampleRate) throw new Error('Could not determine sample rate')
+
+        await notify('Distorting')
+        await distortAudio({ inputPath, outputPath, sampleRate, percentage: 0.7, pitch: 1.25, format: 'mp3' })
+
+        await notify('Sending')
+        await telegraf.telegram.sendAudio(
+          message.chat.id,
+          {
+            source: outputPath,
+            filename: message.audio.file_name
+              ? message.audio.file_name.replace(/\.mp3$/, ' (distorted).mp3')
+              : 'distorted.mp3',
+          },
+          { reply_parameters },
+        )
+      } else if ('sticker' in message) {
+        const inputPath = `./local/operations/${operationId}/input.webp`
+        const outputPath = `./local/operations/${operationId}/output.webp`
+
+        await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
+
+        await notify('Downloading')
+        const url = await telegraf.telegram.getFileLink(message.sticker.file_id)
+        await downloadFile({ url, path: inputPath })
+
+        await notify('Verifying')
+        const [width, height] = await getImageDimensions({ path: inputPath })
+
+        await notify('Distorting')
+        await distortImage({ inputPath, outputPath, rescale: 50, width, height })
+
+        await notify('Sending')
+        await telegraf.telegram.sendSticker(message.chat.id, { source: outputPath }, { reply_parameters })
+      } else if ('photo' in message) {
+        const photo = message.photo
+          .sort((a, b) => b.width * b.height - a.width * a.height)
+          .filter(p => p.file_size && p.file_size <= maxSizeBytes && p.width <= maxWidth && p.height <= maxHeight)[0]!
+
+        const inputPath = `./local/operations/${operationId}/input.jpeg`
+        const outputPath = `./local/operations/${operationId}/output.jpeg`
+
+        await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
+
+        await notify('Downloading')
+        const url = await telegraf.telegram.getFileLink(photo.file_id)
+        await downloadFile({ url, path: inputPath })
+
+        await notify('Verifying')
+        const [width, height] = await getImageDimensions({ path: inputPath })
+
+        await notify('Distorting')
+        await distortImage({ inputPath, outputPath, rescale: 50, width, height })
+
+        await notify('Sending')
+        await telegraf.telegram.sendPhoto(message.chat.id, { source: outputPath }, { reply_parameters })
+      } else if ('video_note' in message) {
+        const inputPath = `./local/operations/${operationId}/input.mp4`
+        const outputPath = `./local/operations/${operationId}/output.mp4`
+
+        await fs.mkdir(`./local/operations/${operationId}/original`, { recursive: true })
+        await fs.mkdir(`./local/operations/${operationId}/distorted`, { recursive: true })
+
+        await notify('Downloading')
+        const url = await telegraf.telegram.getFileLink(message.video_note.file_id)
+        await downloadFile({ url, path: inputPath })
+
+        await notify('Extracting frames')
+        await extractFrames({ inputPath, outputDirectory: `./local/operations/${operationId}/original` })
+
+        await notify('Verifying')
+        const sampleRate = await getAudioSampleRate({ path: inputPath })
+        const [width, height] = await getImageDimensions({ path: `./local/operations/${operationId}/original/1.jpg` })
+
+        const filenames = await fs.readdir(`./local/operations/${operationId}/original`)
+        // Sort frames by sequence instead of alphabetically
+        // 1.jpg, 2.jpg, 3.jpg, etc.
+        filenames.sort((a, b) => parseInt(a) - parseInt(b))
+
+        let lastUpdatedAt = 0
+        let processed = 0
+
+        await pAll(
+          filenames.map((filename, i) => async () => {
+            processed++
+            if (Date.now() - lastUpdatedAt >= 3000) {
+              lastUpdatedAt = Date.now()
+              await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
+            }
+            const percentage = i / (filenames.length - 1)
+            const rescale = 40 + 50 * (1 - percentage)
+            await distortImage({
+              inputPath: `./local/operations/${operationId}/original/${filename}`,
+              outputPath: `./local/operations/${operationId}/distorted/${filename}`,
+              width,
+              height,
+              rescale,
+            })
+          }),
+          { concurrency },
+        )
+
+        await notify('Creating a video note')
+        await combineFrames({
+          inputPath,
+          outputPath,
+          inputDirectory: `./local/operations/${operationId}/distorted`,
+          percentage: 0.7,
+          pitch: 1.25,
+          sampleRate,
+          audio: Boolean(sampleRate),
+        })
+
+        await notify('Sending')
+        await telegraf.telegram.sendVideoNote(message.chat.id, { source: outputPath }, { reply_parameters })
+      } else if ('video' in message) {
+        const inputPath = `./local/operations/${operationId}/input.mp4`
+        const outputPath = `./local/operations/${operationId}/output.mp4`
+
+        await fs.mkdir(`./local/operations/${operationId}/original`, { recursive: true })
+        await fs.mkdir(`./local/operations/${operationId}/distorted`, { recursive: true })
+
+        await notify('Downloading')
+        const url = await telegraf.telegram.getFileLink(message.video.file_id)
+        await downloadFile({ url, path: inputPath })
+
+        await notify('Extracting frames')
+        await extractFrames({ inputPath, outputDirectory: `./local/operations/${operationId}/original` })
+
+        await notify('Verifying')
+        const sampleRate = await getAudioSampleRate({ path: inputPath })
+        const [width, height] = await getImageDimensions({ path: `./local/operations/${operationId}/original/1.jpg` })
+
+        const filenames = await fs.readdir(`./local/operations/${operationId}/original`)
+        // Sort frames by sequence instead of alphabetically
+        // 1.jpg, 2.jpg, 3.jpg, etc.
+        filenames.sort((a, b) => parseInt(a) - parseInt(b))
+
+        let lastUpdatedAt = 0
+        let processed = 0
+
+        await pAll(
+          filenames.map((filename, i) => async () => {
+            processed++
+            if (Date.now() - lastUpdatedAt >= 3000) {
+              lastUpdatedAt = Date.now()
+              await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
+            }
+            const percentage = i / (filenames.length - 1)
+            const rescale = 40 + 50 * (1 - percentage)
+            await distortImage({
+              inputPath: `./local/operations/${operationId}/original/${filename}`,
+              outputPath: `./local/operations/${operationId}/distorted/${filename}`,
+              width,
+              height,
+              rescale,
+            })
+          }),
+          { concurrency },
+        )
+
+        await notify('Creating a video')
+        await combineFrames({
+          inputPath,
+          outputPath,
+          inputDirectory: `./local/operations/${operationId}/distorted`,
+          percentage: 0.7,
+          pitch: 1.25,
+          sampleRate,
+          audio: Boolean(sampleRate),
+        })
+
+        await notify('Sending')
+        await telegraf.telegram.sendVideo(message.chat.id, { source: outputPath }, { reply_parameters })
+      } else if ('animation' in message) {
+        const inputPath = `./local/operations/${operationId}/input.mp4`
+        const outputPath = `./local/operations/${operationId}/output.mp4`
+
+        await fs.mkdir(`./local/operations/${operationId}/original`, { recursive: true })
+        await fs.mkdir(`./local/operations/${operationId}/distorted`, { recursive: true })
+
+        await notify('Downloading')
+        const url = await telegraf.telegram.getFileLink(message.animation.file_id)
+        await downloadFile({ url, path: inputPath })
+
+        await notify('Extracting frames')
+        await extractFrames({ inputPath, outputDirectory: `./local/operations/${operationId}/original` })
+
+        await notify('Verifying')
+        const [width, height] = await getImageDimensions({ path: `./local/operations/${operationId}/original/1.jpg` })
+
+        const filenames = await fs.readdir(`./local/operations/${operationId}/original`)
+        // Sort frames by sequence instead of alphabetically
+        // 1.jpg, 2.jpg, 3.jpg, etc.
+        filenames.sort((a, b) => parseInt(a) - parseInt(b))
+
+        let lastUpdatedAt = 0
+        let processed = 0
+
+        await pAll(
+          filenames.map((filename, i) => async () => {
+            processed++
+            if (Date.now() - lastUpdatedAt >= 3000) {
+              lastUpdatedAt = Date.now()
+              await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
+            }
+            const percentage = i / (filenames.length - 1)
+            const rescale = 40 + 50 * (1 - percentage)
+            await distortImage({
+              inputPath: `./local/operations/${operationId}/original/${filename}`,
+              outputPath: `./local/operations/${operationId}/distorted/${filename}`,
+              width,
+              height,
+              rescale,
+            })
+          }),
+          { concurrency },
+        )
+
+        await notify('Creating an animation')
+        await combineFrames({
+          inputPath,
+          outputPath,
+          inputDirectory: `./local/operations/${operationId}/distorted`,
+          percentage: null,
+          pitch: -1,
+          sampleRate: null,
+          audio: false,
+        })
+
+        await notify('Sending')
+        await telegraf.telegram.sendAnimation(message.chat.id, { source: outputPath }, { reply_parameters })
+      }
+
+      await telegraf.telegram.deleteMessage(statusMessage.chat.id, statusMessage.message_id).catch(() => {})
+    } catch (err) {
+      console.warn(err)
+      await notify('Sorry, something went wrong. Please try another file!')
+    } finally {
+      await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
+  if (!enqueued) {
+    await notify('Sorry, the queue is full. Please try again later!')
+  }
+}
+
 // TODO: don't let one person fill up the queue
 // TODO: support in groups
 // TODO: add support for video stickers
@@ -49,737 +555,32 @@ const queue = new Queue({ limit: 100 })
 // Clean up
 await fs.rm('./local/operations', { recursive: true, force: true })
 
-telegraf.on(message('voice'), async context => {
-  const durationSeconds = context.message.voice.duration
-  if (durationSeconds > maxAudioDurationSeconds) {
-    await context.reply(`Max duration: ${maxAudioDurationSeconds} seconds (provided: ${durationSeconds})`)
-    return
-  }
-
-  const mimeType = context.message.voice.mime_type
-  if (!mimeType) {
-    await context.reply('Could not determine file mime type')
-    // TODO: log
-    return
-  }
-  if (!supportedMimeTypes.includes(mimeType)) {
-    await context.reply(`Unsupported mime type: ${mimeType}`)
-    // TODO: log
-    return
-  }
-
-  const sizeBytes = context.message.voice.file_size
-  if (!sizeBytes) {
-    await context.reply('Could not determine file size')
-    return
-  }
-  if (sizeBytes > maxSizeBytes) {
-    await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`)
-    return
-  }
-
-  const message = await context.reply('Queued', {
-    reply_parameters: { message_id: context.message.message_id },
-    disable_notification: true,
-  })
-
-  async function notify(text: string) {
-    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
-  }
-
-  const enqueued = queue.enqueue(async () => {
-    const fileId = context.message.voice.file_id
-    const operationId = uuid.v4()
-    const inputPath = `./local/operations/${operationId}/input.ogg`
-    const outputPath = `./local/operations/${operationId}/output.ogg`
-
-    try {
-      await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
-
-      await notify('Downloading')
-      const url = await telegraf.telegram.getFileLink(fileId)
-      await downloadFile({ url, path: inputPath })
-
-      await notify('Verifying')
-      const sampleRate = await getAudioSampleRate({ path: inputPath })
-      if (!sampleRate) {
-        throw new Error('Could not determine sample rate')
-      }
-
-      await notify('Distorting')
-      await distortAudio({
-        inputPath,
-        outputPath,
-        sampleRate,
-        percentage: 0.7,
-        pitch: 1.25,
-        format: 'ogg',
-      })
-
-      await notify('Sending')
-      await telegraf.telegram.sendVoice(
-        context.message.chat.id,
-        { source: outputPath },
-        { reply_parameters: { message_id: context.message.message_id } },
-      )
-
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
-    } catch (err) {
-      console.warn(err)
-      await notify('Sorry, something went wrong. Please try another file!')
-    } finally {
-      await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
-    }
-  })
-
-  if (!enqueued) {
-    await notify('Sorry, the queue is full. Please try again later!')
-    return
-  }
+// Bot should not work in channels
+telegraf.use((context, next) => {
+  if (context.chat?.type === 'channel') return
+  return next()
 })
 
-telegraf.on(message('audio'), async context => {
-  const durationSeconds = context.message.audio.duration
-  if (durationSeconds > maxAudioDurationSeconds) {
-    await context.reply(`Max duration: ${maxAudioDurationSeconds} seconds (provided: ${durationSeconds})`)
-    return
-  }
+telegraf.command('distort', async context => {
+  if (!context.message.reply_to_message) return // TODO: add error message
 
-  const mimeType = context.message.audio.mime_type
-  if (!mimeType) {
-    await context.reply('Could not determine file mime type')
-    // TODO: log
-    return
-  }
-  if (!supportedMimeTypes.includes(mimeType)) {
-    await context.reply(`Unsupported mime type: ${mimeType}`)
-    // TODO: log
-    return
-  }
-
-  const sizeBytes = context.message.audio.file_size
-  if (!sizeBytes) {
-    await context.reply('Could not determine file size')
-    return
-  }
-  if (sizeBytes > maxSizeBytes) {
-    await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`)
-    return
-  }
-
-  const message = await context.reply('Queued', {
-    reply_parameters: { message_id: context.message.message_id },
-    disable_notification: true,
-  })
-
-  async function notify(text: string) {
-    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
-  }
-
-  const enqueued = queue.enqueue(async () => {
-    const fileId = context.message.audio.file_id
-    const operationId = uuid.v4()
-    const inputPath = `./local/operations/${operationId}/input.mp3`
-    const outputPath = `./local/operations/${operationId}/output.mp3`
-
-    try {
-      await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
-
-      await notify('Downloading')
-      const url = await telegraf.telegram.getFileLink(fileId)
-      await downloadFile({ url, path: inputPath })
-
-      await notify('Verifying')
-      const sampleRate = await getAudioSampleRate({ path: inputPath })
-      if (!sampleRate) {
-        throw new Error('Could not determine sample rate')
-      }
-
-      await notify('Distorting')
-      await distortAudio({
-        inputPath,
-        outputPath,
-        sampleRate,
-        percentage: 0.7,
-        pitch: 1.25,
-        format: 'mp3',
-      })
-
-      await notify('Sending')
-      await telegraf.telegram.sendAudio(
-        context.message.chat.id,
-        {
-          source: outputPath,
-          filename: context.message.audio.file_name
-            ? context.message.audio.file_name.replace(/\.mp3$/, ' (distorted).mp3')
-            : 'distorted.mp3',
-        },
-        { reply_parameters: { message_id: context.message.message_id } },
-      )
-
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
-    } catch (err) {
-      console.warn(err)
-      await notify('Sorry, something went wrong. Please try another file!')
-    } finally {
-      await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
-    }
-  })
-
-  if (!enqueued) {
-    await notify('Sorry, the queue is full. Please try again later!')
-    return
-  }
+  await handleDistortMedia(context.message.reply_to_message, context, context.message)
 })
 
-telegraf.on(message('sticker'), async context => {
-  if (context.message.sticker.type !== 'regular') {
-    await context.reply('Masks and custom emojis are not supported')
-    return
-  }
-
-  if (context.message.sticker.is_animated) {
-    await context.reply('Animated stickers are not supported')
-    return
-  }
-
-  if (context.message.sticker.is_video) {
-    await context.reply('Sorry, video stickers are not supported yet. Coming soon!')
-    return
-  }
-
-  const sizeBytes = context.message.sticker.file_size
-  if (!sizeBytes) {
-    await context.reply('Could not determine file size')
-    return
-  }
-  if (sizeBytes > maxSizeBytes) {
-    await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`)
-    return
-  }
-
-  const message = await context.reply('Queued', {
-    reply_parameters: { message_id: context.message.message_id },
-    disable_notification: true,
-  })
-
-  async function notify(text: string) {
-    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
-  }
-
-  const enqueued = queue.enqueue(async () => {
-    const fileId = context.message.sticker.file_id
-    const operationId = uuid.v4()
-    const inputPath = `./local/operations/${operationId}/input.webp`
-    const outputPath = `./local/operations/${operationId}/output.webp`
-
-    try {
-      await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
-
-      await notify('Downloading')
-      const url = await telegraf.telegram.getFileLink(fileId)
-      await downloadFile({ url, path: inputPath })
-
-      await notify('Verifying')
-      const [width, height] = await getImageDimensions({ path: inputPath })
-
-      await notify('Distorting')
-      await distortImage({ inputPath, outputPath, rescale: 50, width, height })
-
-      await notify('Sending')
-      await telegraf.telegram.sendSticker(
-        context.message.chat.id,
-        { source: outputPath },
-        { reply_parameters: { message_id: context.message.message_id } },
-      )
-
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
-    } catch (err) {
-      console.warn(err)
-      await notify('Sorry, something went wrong. Please try another file!')
-    } finally {
-      await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
-    }
-  })
-
-  if (!enqueued) {
-    await notify('Sorry, the queue is full. Please try again later!')
-    return
-  }
+// Direct media messages should only be handled in private chats
+telegraf.use((context, next) => {
+  if (context.chat?.type !== 'private') return
+  return next()
 })
 
-telegraf.on(message('photo'), async context => {
-  const photo = context.message.photo
-    .sort((a, b) => b.width * b.height - a.width * a.height)
-    .filter(p => p.file_size && p.file_size <= maxSizeBytes && p.width <= maxWidth && p.height <= maxHeight)[0]
-  if (!photo) {
-    await context.reply('Photo is too large or invalid')
-    return
-  }
-
-  const message = await context.reply('Queued', {
-    reply_parameters: { message_id: context.message.message_id },
-    disable_notification: true,
-  })
-
-  async function notify(text: string) {
-    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
-  }
-
-  const enqueued = queue.enqueue(async () => {
-    const fileId = photo.file_id
-    const operationId = uuid.v4()
-    const inputPath = `./local/operations/${operationId}/input.jpeg`
-    const outputPath = `./local/operations/${operationId}/output.jpeg`
-
-    try {
-      await fs.mkdir(`./local/operations/${operationId}`, { recursive: true })
-
-      await notify('Downloading')
-      const url = await telegraf.telegram.getFileLink(fileId)
-      await downloadFile({ url, path: inputPath })
-
-      await notify('Verifying')
-      const [width, height] = await getImageDimensions({ path: inputPath })
-
-      await notify('Distorting')
-      await distortImage({ inputPath, outputPath, rescale: 50, width, height })
-
-      await notify('Sending')
-      await telegraf.telegram.sendPhoto(
-        context.message.chat.id,
-        { source: outputPath },
-        { reply_parameters: { message_id: context.message.message_id } },
-      )
-
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
-    } catch (err) {
-      console.warn(err)
-      await notify('Sorry, something went wrong. Please try another file!')
-    } finally {
-      await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
-    }
-  })
-
-  if (!enqueued) {
-    await notify('Sorry, the queue is full. Please try again later!')
-    return
-  }
-})
-
-telegraf.on(message('video_note'), async context => {
-  const durationSeconds = context.message.video_note.duration
-  if (durationSeconds > maxVideoDurationSeconds) {
-    await context.reply(`Max duration: ${maxVideoDurationSeconds} seconds (provided: ${durationSeconds})`)
-    return
-  }
-
-  const sizeBytes = context.message.video_note.file_size
-  if (!sizeBytes) {
-    await context.reply('Could not determine file size')
-    return
-  }
-  if (sizeBytes > maxSizeBytes) {
-    await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`)
-    return
-  }
-
-  const diameter = context.message.video_note.length
-  if (diameter > maxDiameter) {
-    await context.reply(`Max diameter: ${maxDiameter} (provided: ${diameter})`)
-    return
-  }
-
-  const message = await context.reply('Queued', {
-    reply_parameters: { message_id: context.message.message_id },
-    disable_notification: true,
-  })
-
-  async function notify(text: string) {
-    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
-  }
-
-  const enqueued = queue.enqueue(async () => {
-    const fileId = context.message.video_note.file_id
-    const operationId = uuid.v4()
-    const inputPath = `./local/operations/${operationId}/input.mp4`
-    const outputPath = `./local/operations/${operationId}/output.mp4`
-
-    try {
-      await fs.mkdir(`./local/operations/${operationId}/original`, { recursive: true })
-      await fs.mkdir(`./local/operations/${operationId}/distorted`, { recursive: true })
-
-      await notify('Downloading')
-      const url = await telegraf.telegram.getFileLink(fileId)
-      await downloadFile({ url, path: inputPath })
-
-      await notify('Extracting frames')
-      await extractFrames({
-        inputPath,
-        outputDirectory: `./local/operations/${operationId}/original`,
-      })
-
-      await notify('Verifying')
-      const sampleRate = await getAudioSampleRate({ path: inputPath })
-      const [width, height] = await getImageDimensions({
-        path: `./local/operations/${operationId}/original/1.jpg`,
-      })
-
-      const filenames = await fs.readdir(`./local/operations/${operationId}/original`)
-
-      // Sort frames by sequence instead of alphabetically
-      // 1.jpg, 2.jpg, 3.jpg, etc.
-      filenames.sort((a, b) => parseInt(a) - parseInt(b))
-
-      let lastUpdatedAt = 0
-      let processed = 0
-
-      await pAll(
-        filenames.map((filename, i) => async () => {
-          processed++
-
-          if (Date.now() - lastUpdatedAt >= 3000) {
-            lastUpdatedAt = Date.now()
-            await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
-          }
-
-          const percentage = i / (filenames.length - 1)
-          const rescale = 40 + 50 * (1 - percentage)
-
-          const filePath = `./local/operations/${operationId}/original/${filename}`
-
-          await distortImage({
-            inputPath: filePath,
-            outputPath: `./local/operations/${operationId}/distorted/${filename}`,
-            width,
-            height,
-            rescale,
-          })
-        }),
-        { concurrency },
-      )
-
-      await notify('Creating a video note')
-      await combineFrames({
-        inputPath,
-        outputPath,
-        inputDirectory: `./local/operations/${operationId}/distorted`,
-        percentage: 0.7,
-        pitch: 1.25,
-        sampleRate,
-        audio: Boolean(sampleRate),
-      })
-
-      await notify('Sending')
-      await telegraf.telegram.sendVideoNote(
-        context.message.chat.id,
-        { source: outputPath },
-        { reply_parameters: { message_id: context.message.message_id } },
-      )
-
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
-    } catch (err) {
-      console.warn(err)
-      await notify('Sorry, something went wrong. Please try another file!')
-    } finally {
-      await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
-    }
-  })
-
-  if (!enqueued) {
-    await notify('Sorry, the queue is full. Please try again later!')
-    return
-  }
-})
-
-telegraf.on(message('video'), async context => {
-  const durationSeconds = context.message.video.duration
-  if (durationSeconds > maxVideoDurationSeconds) {
-    await context.reply(`Max duration: ${maxVideoDurationSeconds} seconds (provided: ${durationSeconds})`)
-    return
-  }
-
-  const sizeBytes = context.message.video.file_size
-  if (!sizeBytes) {
-    await context.reply('Could not determine file size')
-    return
-  }
-  if (sizeBytes > maxSizeBytes) {
-    await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`)
-    return
-  }
-
-  const width = context.message.video.width
-  if (width > maxWidth) {
-    await context.reply(`Max width: ${maxWidth} (provided: ${width})`)
-    return
-  }
-
-  const height = context.message.video.height
-  if (height > maxHeight) {
-    await context.reply(`Max height: ${maxHeight} (provided: ${height})`)
-    return
-  }
-
-  const mimeType = context.message.video.mime_type
-  if (!mimeType) {
-    await context.reply('Could not determine file mime type')
-    // TODO: log
-    return
-  }
-  if (!supportedMimeTypes.includes(mimeType)) {
-    await context.reply('Unsupported mime type')
-    // TODO: log
-    return
-  }
-
-  const message = await context.reply('Queued', {
-    reply_parameters: { message_id: context.message.message_id },
-    disable_notification: true,
-  })
-
-  async function notify(text: string) {
-    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
-  }
-
-  const enqueued = queue.enqueue(async () => {
-    const fileId = context.message.video.file_id
-    const operationId = uuid.v4()
-    const inputPath = `./local/operations/${operationId}/input.mp4`
-    const outputPath = `./local/operations/${operationId}/output.mp4`
-
-    try {
-      await fs.mkdir(`./local/operations/${operationId}/original`, { recursive: true })
-      await fs.mkdir(`./local/operations/${operationId}/distorted`, { recursive: true })
-
-      await notify('Downloading')
-      const url = await telegraf.telegram.getFileLink(fileId)
-      await downloadFile({ url, path: inputPath })
-
-      await notify('Extracting frames')
-      await extractFrames({
-        inputPath,
-        outputDirectory: `./local/operations/${operationId}/original`,
-      })
-
-      await notify('Verifying')
-      const sampleRate = await getAudioSampleRate({ path: inputPath })
-      const [width, height] = await getImageDimensions({
-        path: `./local/operations/${operationId}/original/1.jpg`,
-      })
-
-      const filenames = await fs.readdir(`./local/operations/${operationId}/original`)
-
-      // Sort frames by sequence instead of alphabetically
-      // 1.jpg, 2.jpg, 3.jpg, etc.
-      filenames.sort((a, b) => parseInt(a) - parseInt(b))
-
-      let lastUpdatedAt = 0
-      let processed = 0
-
-      await pAll(
-        filenames.map((filename, i) => async () => {
-          processed++
-
-          if (Date.now() - lastUpdatedAt >= 3000) {
-            lastUpdatedAt = Date.now()
-            await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
-          }
-
-          const percentage = i / (filenames.length - 1)
-          const rescale = 40 + 50 * (1 - percentage)
-
-          const filePath = `./local/operations/${operationId}/original/${filename}`
-
-          await distortImage({
-            inputPath: filePath,
-            outputPath: `./local/operations/${operationId}/distorted/${filename}`,
-            width,
-            height,
-            rescale,
-          })
-        }),
-        { concurrency },
-      )
-
-      await notify('Creating a video')
-      await combineFrames({
-        inputPath,
-        outputPath,
-        inputDirectory: `./local/operations/${operationId}/distorted`,
-        percentage: 0.7,
-        pitch: 1.25,
-        sampleRate,
-        audio: Boolean(sampleRate),
-      })
-
-      await notify('Sending')
-      await telegraf.telegram.sendVideo(
-        context.message.chat.id,
-        { source: outputPath },
-        { reply_parameters: { message_id: context.message.message_id } },
-      )
-
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
-    } catch (err) {
-      console.warn(err)
-      await notify('Sorry, something went wrong. Please try another file!')
-    } finally {
-      await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
-    }
-  })
-
-  if (!enqueued) {
-    await notify('Sorry, the queue is full. Please try again later!')
-    return
-  }
-})
-
-telegraf.on(message('animation'), async context => {
-  const durationSeconds = context.message.animation.duration
-  if (durationSeconds > maxVideoDurationSeconds) {
-    await context.reply(`Max duration: ${maxVideoDurationSeconds} seconds (provided: ${durationSeconds})`)
-    return
-  }
-
-  const sizeBytes = context.message.animation.file_size
-  if (!sizeBytes) {
-    await context.reply('Could not determine file size')
-    return
-  }
-  if (sizeBytes > maxSizeBytes) {
-    await context.reply(`Max size: ${maxSizeBytes} bytes (provided: ${sizeBytes})`)
-    return
-  }
-
-  const width = context.message.animation.width
-  if (width > maxWidth) {
-    await context.reply(`Max width: ${maxWidth} (provided: ${width})`)
-    return
-  }
-
-  const height = context.message.animation.height
-  if (height > maxHeight) {
-    await context.reply(`Max height: ${maxHeight} (provided: ${height})`)
-    return
-  }
-
-  const mimeType = context.message.animation.mime_type
-  if (!mimeType) {
-    await context.reply('Could not determine file mime type')
-    // TODO: log
-    return
-  }
-  if (!supportedMimeTypes.includes(mimeType)) {
-    await context.reply('Unsupported mime type')
-    // TODO: log
-    return
-  }
-
-  const message = await context.reply('Queued', {
-    reply_parameters: { message_id: context.message.message_id },
-    disable_notification: true,
-  })
-
-  async function notify(text: string) {
-    await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
-  }
-
-  const enqueued = queue.enqueue(async () => {
-    const fileId = context.message.animation.file_id
-    const operationId = uuid.v4()
-    const inputPath = `./local/operations/${operationId}/input.mp4`
-    const outputPath = `./local/operations/${operationId}/output.mp4`
-
-    try {
-      await fs.mkdir(`./local/operations/${operationId}/original`, { recursive: true })
-      await fs.mkdir(`./local/operations/${operationId}/distorted`, { recursive: true })
-
-      await notify('Downloading')
-      const url = await telegraf.telegram.getFileLink(fileId)
-      await downloadFile({ url, path: inputPath })
-
-      await notify('Extracting frames')
-      await extractFrames({
-        inputPath,
-        outputDirectory: `./local/operations/${operationId}/original`,
-      })
-
-      await notify('Verifying')
-      const [width, height] = await getImageDimensions({
-        path: `./local/operations/${operationId}/original/1.jpg`,
-      })
-
-      const filenames = await fs.readdir(`./local/operations/${operationId}/original`)
-
-      // Sort frames by sequence instead of alphabetically
-      // 1.jpg, 2.jpg, 3.jpg, etc.
-      filenames.sort((a, b) => parseInt(a) - parseInt(b))
-
-      let lastUpdatedAt = 0
-      let processed = 0
-
-      await pAll(
-        filenames.map((filename, i) => async () => {
-          processed++
-
-          if (Date.now() - lastUpdatedAt >= 3000) {
-            lastUpdatedAt = Date.now()
-            await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
-          }
-
-          const percentage = i / (filenames.length - 1)
-          const rescale = 40 + 50 * (1 - percentage)
-
-          const filePath = `./local/operations/${operationId}/original/${filename}`
-
-          await distortImage({
-            inputPath: filePath,
-            outputPath: `./local/operations/${operationId}/distorted/${filename}`,
-            width,
-            height,
-            rescale,
-          })
-        }),
-        { concurrency },
-      )
-
-      await notify('Creating an animation')
-      await combineFrames({
-        inputPath,
-        outputPath,
-        inputDirectory: `./local/operations/${operationId}/distorted`,
-        percentage: null,
-        pitch: -1,
-        sampleRate: null,
-        audio: false,
-      })
-
-      await notify('Sending')
-      await telegraf.telegram.sendAnimation(
-        context.message.chat.id,
-        { source: outputPath },
-        { reply_parameters: { message_id: context.message.message_id } },
-      )
-
-      await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
-    } catch (err) {
-      console.warn(err)
-      await notify('Sorry, something went wrong. Please try another file!')
-    } finally {
-      await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
-    }
-  })
-
-  if (!enqueued) {
-    await notify('Sorry, the queue is full. Please try again later!')
-    return
-  }
-})
-
-telegraf.on(message('document'), async context => {
-  await context.reply('Sorry, documents not supported.')
-})
+telegraf.on(message('voice'), async context => await handleDistortMedia(context.message, context))
+telegraf.on(message('audio'), async context => await handleDistortMedia(context.message, context))
+telegraf.on(message('sticker'), async context => await handleDistortMedia(context.message, context))
+telegraf.on(message('photo'), async context => await handleDistortMedia(context.message, context))
+telegraf.on(message('video_note'), async context => await handleDistortMedia(context.message, context))
+telegraf.on(message('video'), async context => await handleDistortMedia(context.message, context))
+telegraf.on(message('animation'), async context => await handleDistortMedia(context.message, context))
+telegraf.on(message('document'), async context => await context.reply('Sorry, documents not supported.'))
 
 await new Promise<void>(resolve => telegraf.launch(() => resolve()))
 
