@@ -30,6 +30,10 @@ async function shutdown(signal?: string) {
 process.on('SIGINT', () => shutdown('SIGINT'))
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 
+await telegraf.telegram.setMyCommands([
+  { command: 'distort', description: 'Reply with /distort to a media file to distort it' },
+])
+
 // Telegram Bot API has a download limit of 20 MB, so we can't exceed that
 const maxSizeBytes = 20 * 1028 * 1024 // 20 MB
 const maxVideoDurationSeconds = 90
