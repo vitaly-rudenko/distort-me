@@ -9,6 +9,7 @@ export async function combineFrames(input: {
   percentage: number | null
   pitch: number | null
   audio: boolean
+  format: 'mp4' | 'webm'
 }) {
   if (input.audio !== Boolean(input.sampleRate)) {
     throw new Error('Both sampleRate and audio must be set or unset at the same time')
@@ -24,7 +25,7 @@ export async function combineFrames(input: {
 
   const filterArgument = filters.length > 0 ? ` -filter:a "${filters.join(',')}"` : ''
 
-  // scale is needed for libx264 (it requires even dimensions)
+  // scale is needed for libx264/libvpx-vp9 (they require even dimensions)
   await new Promise<void>((resolve, reject) => {
     exec(
       `ffmpeg \
@@ -38,11 +39,9 @@ export async function combineFrames(input: {
        ${input.audio ? `-c:a libopus` : ''} \
        ${input.audio ? `-b:a 192k` : ''} \
        -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
-       -c:v libx264 \
-       -crf 18 \
-       -preset slow \
-       -pix_fmt yuv420p \
-       -movflags +faststart \
+       ${input.format === 'mp4' ? '-c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p -movflags +faststart' : ''} \
+       ${input.format === 'webm' ? '-c:v libvpx-vp9 -b:v 0 -crf 33 -deadline good -cpu-used 2' : ''} \
+       ${input.format === 'webm' && !input.audio ? '-an' : ''} \
        "${input.outputPath}"`,
       err => (err ? reject(err) : resolve()),
     )

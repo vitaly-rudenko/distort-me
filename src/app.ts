@@ -243,11 +243,6 @@ telegraf.on(message('sticker'), async context => {
     return
   }
 
-  if (context.message.sticker.is_video) {
-    await context.reply('Sorry, video stickers are not supported yet. Coming soon!')
-    return
-  }
-
   const sizeBytes = context.message.sticker.file_size
   if (!sizeBytes) {
     await context.reply('Could not determine file size')
@@ -265,6 +260,96 @@ telegraf.on(message('sticker'), async context => {
 
   async function notify(text: string) {
     await telegraf.telegram.editMessageText(message.chat.id, message.message_id, undefined, text).catch(() => {})
+  }
+
+  if (context.message.sticker.is_video) {
+    const enqueued = queue.enqueue(async () => {
+      const fileId = context.message.sticker.file_id
+      const operationId = uuid.v4()
+      const inputPath = `./local/operations/${operationId}/input.webm`
+      const outputPath = `./local/operations/${operationId}/output.webm`
+
+      try {
+        await fs.mkdir(`./local/operations/${operationId}/original`, { recursive: true })
+        await fs.mkdir(`./local/operations/${operationId}/distorted`, { recursive: true })
+
+        await notify('Downloading')
+        const url = await telegraf.telegram.getFileLink(fileId)
+        await downloadFile({ url, path: inputPath })
+
+        await notify('Extracting frames')
+        await extractFrames({
+          inputPath,
+          outputDirectory: `./local/operations/${operationId}/original`,
+        })
+
+        await notify('Verifying')
+        const [width, height] = await getImageDimensions({
+          path: `./local/operations/${operationId}/original/1.jpg`,
+        })
+
+        const filenames = await fs.readdir(`./local/operations/${operationId}/original`)
+        filenames.sort((a, b) => parseInt(a) - parseInt(b))
+
+        let lastUpdatedAt = 0
+        let processed = 0
+
+        await pAll(
+          filenames.map((filename, i) => async () => {
+            processed++
+
+            if (Date.now() - lastUpdatedAt >= 3000) {
+              lastUpdatedAt = Date.now()
+              await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
+            }
+
+            const percentage = filenames.length > 1 ? i / (filenames.length - 1) : 0
+            const rescale = 40 + 50 * (1 - percentage)
+
+            await distortImage({
+              inputPath: `./local/operations/${operationId}/original/${filename}`,
+              outputPath: `./local/operations/${operationId}/distorted/${filename}`,
+              width,
+              height,
+              rescale,
+            })
+          }),
+          { concurrency },
+        )
+
+        await notify('Creating a sticker')
+        await combineFrames({
+          inputPath,
+          outputPath,
+          inputDirectory: `./local/operations/${operationId}/distorted`,
+          percentage: null,
+          pitch: null,
+          sampleRate: null,
+          audio: false,
+          format: 'webm',
+        })
+
+        await notify('Sending')
+        await telegraf.telegram.sendSticker(
+          context.message.chat.id,
+          { source: outputPath },
+          { reply_parameters: { message_id: context.message.message_id } },
+        )
+
+        await telegraf.telegram.deleteMessage(message.chat.id, message.message_id).catch(() => {})
+      } catch (err) {
+        console.warn(err)
+        await notify('Sorry, something went wrong. Please try another file!')
+      } finally {
+        await fs.rm(`./local/operations/${operationId}`, { recursive: true, force: true }).catch(() => {})
+      }
+    })
+
+    if (!enqueued) {
+      await notify('Sorry, the queue is full. Please try again later!')
+    }
+
+    return
   }
 
   const enqueued = queue.enqueue(async () => {
@@ -443,7 +528,7 @@ telegraf.on(message('video_note'), async context => {
             await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
           }
 
-          const percentage = i / (filenames.length - 1)
+          const percentage = filenames.length > 1 ? i / (filenames.length - 1) : 0
           const rescale = 40 + 50 * (1 - percentage)
 
           const filePath = `./local/operations/${operationId}/original/${filename}`
@@ -468,6 +553,7 @@ telegraf.on(message('video_note'), async context => {
         pitch: 1.25,
         sampleRate,
         audio: Boolean(sampleRate),
+        format: 'mp4',
       })
 
       await notify('Sending')
@@ -586,7 +672,7 @@ telegraf.on(message('video'), async context => {
             await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
           }
 
-          const percentage = i / (filenames.length - 1)
+          const percentage = filenames.length > 1 ? i / (filenames.length - 1) : 0
           const rescale = 40 + 50 * (1 - percentage)
 
           const filePath = `./local/operations/${operationId}/original/${filename}`
@@ -611,6 +697,7 @@ telegraf.on(message('video'), async context => {
         pitch: 1.25,
         sampleRate,
         audio: Boolean(sampleRate),
+        format: 'mp4',
       })
 
       await notify('Sending')
@@ -728,7 +815,7 @@ telegraf.on(message('animation'), async context => {
             await notify(`Distorting frames (${Math.floor((processed / filenames.length) * 100)}%)`)
           }
 
-          const percentage = i / (filenames.length - 1)
+          const percentage = filenames.length > 1 ? i / (filenames.length - 1) : 0
           const rescale = 40 + 50 * (1 - percentage)
 
           const filePath = `./local/operations/${operationId}/original/${filename}`
@@ -753,6 +840,7 @@ telegraf.on(message('animation'), async context => {
         pitch: -1,
         sampleRate: null,
         audio: false,
+        format: 'mp4',
       })
 
       await notify('Sending')
